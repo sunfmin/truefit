@@ -207,7 +207,7 @@ fn tlc() -> Result<(PathBuf, bool), Vec<Value>> {
     Ok((jar, true))
 }
 
-fn sha256(path: &Path) -> Option<String> {
+pub fn sha256(path: &Path) -> Option<String> {
     use sha2::Digest;
     let digest = sha2::Sha256::digest(std::fs::read(path).ok()?);
     Some(digest.iter().map(|b| format!("{b:02x}")).collect())

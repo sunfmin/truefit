@@ -65,10 +65,37 @@ pub struct Standin {
     normalise: Vec<Normalise>,
     #[serde(default)]
     case: Vec<Case>,
+    /// The failures it can answer, each held by a case whose `fault` names it.
+    #[serde(default)]
+    pub faults: Vec<String>,
+    /// The variable that tells the stand-in which fault to answer.
+    #[serde(default = "default_fault_env")]
+    fault_env: String,
+    /// Why it answers no fault, kept while the stand-in is the one hashed.
+    #[serde(default)]
+    pub no_faults: Option<NoFaults>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoFaults {
+    pub why: String,
+    pub sha256: String,
+}
+
+impl Standin {
+    /// The variable and value that tell the stand-in to answer `c`'s fault.
+    fn told<'a>(&'a self, c: &'a Case) -> Option<(&'a str, &'a str)> {
+        Some((self.fault_env.as_str(), c.fault.as_deref()?))
+    }
 }
 
 fn default_compare() -> Vec<String> {
     vec!["exit".into(), "stdout".into()]
+}
+
+fn default_fault_env() -> String {
+    "TRUEFIT_FAULT".into()
 }
 
 #[derive(Deserialize)]
@@ -92,6 +119,14 @@ struct Case {
     dir: Option<String>,
     #[serde(default)]
     files: Vec<String>,
+    /// The fault it holds: the stand-in runs told to answer it.
+    #[serde(default)]
+    fault: Option<String>,
+    /// Must succeed for the real side to run it; else it is not run, with `needs`.
+    #[serde(default)]
+    ready: Vec<String>,
+    #[serde(default)]
+    needs: String,
 }
 
 /// What one side answered to one case, after normalisation.
@@ -210,6 +245,33 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
         if s.case.is_empty() {
             faults.push(fault(format!("stand-in `{n}` has no case"), format!("declare its contract as [[standin.case]] entries: every answer of `{}` the system reads", s.real.first().map_or("", |r| r))));
         }
+        for f in s
+            .faults
+            .iter()
+            .filter(|f| !s.case.iter().any(|c| c.fault.as_ref() == Some(f)))
+        {
+            faults.push(fault(
+                format!("stand-in `{n}` declares fault `{f}` that no case holds"),
+                format!("declare a [[standin.case]] with fault = \"{f}\" whose real side fails as `{}` does", s.real.first().map_or("", |r| r)),
+            ));
+        }
+        for (c, f) in s
+            .case
+            .iter()
+            .filter_map(|c| Some((&c.name, c.fault.as_ref()?)))
+            .filter(|(_, f)| !s.faults.contains(f))
+        {
+            faults.push(fault(
+                format!("stand-in `{n}`: case `{c}` holds fault `{f}`, not in its `faults`"),
+                format!("add \"{f}\" to its faults, or name one that is"),
+            ));
+        }
+        if s.no_faults.is_some() && !s.faults.is_empty() {
+            faults.push(fault(
+                format!("stand-in `{n}` declares faults and no_faults"),
+                "drop no_faults: it declares faults",
+            ));
+        }
         for p in s.compare.iter().filter(|p| !PARTS.contains(&p.as_str())) {
             faults.push(fault(
                 format!("stand-in `{n}` compares `{p}`"),
@@ -242,7 +304,7 @@ fn check_standin(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) 
     let cases: Vec<Value> = s
         .case
         .iter()
-        .map(|c| match answer(root, &s.run, c, rules) {
+        .map(|c| match answer(root, &s.run, c, rules, s.told(c)) {
             Ok(_) => json!({"case": c.name, "result": "ran"}),
             Err(e) => {
                 ok = false;
@@ -271,10 +333,22 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     let mut ok = true;
     let mut cases = Vec::new();
     let mut differing = Vec::new();
+    let mut unrun = Vec::new();
     for c in &s.case {
+        if !c.ready.is_empty() && !matches!(quiet(root, &c.ready), Some(o) if o.status.success()) {
+            let why = format!("`{}` did not succeed", c.ready.join(" "));
+            let needs = if c.needs.is_empty() {
+                why.clone()
+            } else {
+                c.needs.clone()
+            };
+            cases.push(json!({"case": c.name, "result": "not run", "why": why, "needs": needs}));
+            unrun.push(needs);
+            continue;
+        }
         let (stand, real) = (
-            answer(root, &s.run, c, rules),
-            answer(root, &s.real, c, rules),
+            answer(root, &s.run, c, rules, s.told(c)),
+            answer(root, &s.real, c, rules, None),
         );
         let case = match (stand, real) {
             (Ok(a), Ok(b)) => {
@@ -297,6 +371,12 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     }
     let mut report =
         json!({"name": s.name, "result": if ok { "pass" } else { "fail" }, "cases": cases});
+    // A case not run here is never a pass: the run is not run, and records nothing.
+    if ok && !unrun.is_empty() {
+        report["result"] = "not run".into();
+        report["needs"] = unrun.join("; ").into();
+        ok = false;
+    }
     let record = json!({"date": today(), "version": version(root, s)});
     // The last real run's differing cases, kept until a real run finds none.
     let differ = differ_file(&s.name);
@@ -408,6 +488,7 @@ fn answer(
     prefix: &[String],
     c: &Case,
     rules: &[(regex_lite::Regex, &str)],
+    told: Option<(&str, &str)>,
 ) -> Result<Answer, String> {
     let program = find(root, &prefix[0]).ok_or_else(|| format!("`{}` is not found", prefix[0]))?;
     let work = scratch()?;
@@ -420,6 +501,7 @@ fn answer(
             .args(&prefix[1..])
             .args(&c.args)
             .envs(&c.env)
+            .envs(told)
             .current_dir(&work)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

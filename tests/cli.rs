@@ -72,7 +72,7 @@ fn an_unknown_command_exits_2_and_names_the_manual() {
 fn the_sample_stand_ins_run_every_case() {
     let (code, out) = truefit_in(&sample("plutil", "plain"), &["contract"]);
     assert_eq!(code, Some(0), "{out:#}");
-    assert_eq!(out["standins"][0]["cases"].as_array().unwrap().len(), 4);
+    assert_eq!(out["standins"][0]["cases"].as_array().unwrap().len(), 5);
     assert_eq!(out["standins"][1]["result"], "pass");
     assert!(out["next"].as_str().unwrap().contains("--real"));
 }
@@ -203,12 +203,24 @@ normalise = [{ pattern = "(", replace = "" }]
 name = "t"
 run = ["x"]
 real = ["y"]
+faults = ["gone"]
+no_faults = { why = "x", sha256 = "y" }
+[[standin.case]]
+name = "c"
+fault = "other"
 "#,
     );
     let (code, out) = truefit_in(&dir, &["contract"]);
     assert_eq!(code, Some(2), "{out:#}");
     let faults = out["error"].as_array().unwrap();
-    assert_eq!(faults.len(), 6, "{out:#}");
+    assert_eq!(faults.len(), 8, "{out:#}");
+    for f in [
+        "stand-in `t` declares fault `gone` that no case holds",
+        "stand-in `t`: case `c` holds fault `other`, not in its `faults`",
+        "stand-in `t` declares faults and no_faults",
+    ] {
+        assert!(faults.iter().any(|g| g["fault"] == f), "{f}: {out:#}");
+    }
     assert!(faults.iter().all(|f| f["fix"].is_string()));
 }
 
@@ -322,7 +334,7 @@ fn next_gives_each_kind_of_task_once_on_the_sample_with_its_evidence() {
     assert!(out["by"].as_str().unwrap().starts_with("truefit "));
     assert_eq!(
         out["counts"],
-        serde_json::json!({"no-contract": 1, "stale-contract": 1, "differing-case": 1})
+        serde_json::json!({"no-contract": 1, "stale-contract": 1, "standin-without-faults": 1, "differing-case": 1})
     );
     let tasks = out["tasks"].as_array().unwrap();
     let kind = |k: &str| tasks.iter().find(|t| t["kind"] == k).unwrap();
@@ -372,6 +384,99 @@ fn next_gives_each_kind_of_task_once_on_the_sample_with_its_evidence() {
 }
 
 #[test]
+fn a_stand_in_without_faults_is_asked_for_them_until_marked_and_again_once_it_changes() {
+    let dir = sample("plutil", "faults");
+    let without = |dir: &Path| {
+        let (_, out) = truefit_in(dir, &["next", "--all"]);
+        out["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["kind"] == "standin-without-faults")
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let tasks = without(&dir);
+    assert_eq!(tasks.len(), 1, "plutil declares its fault: {tasks:#?}");
+    let task = &tasks[0];
+    assert_eq!(task["evidence"]["standin"], "plutil-wrong");
+    assert_eq!(
+        task["files"],
+        serde_json::json!(["./plutil-wrong", "truefit.toml"])
+    );
+    assert_eq!(task["accept"], "truefit contract --real plutil-wrong");
+    assert!(task["evidence"]["no_faults"].is_null());
+    let sha = task["evidence"]["sha256"].as_str().unwrap().to_string();
+    assert_eq!(sha.len(), 64);
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let marked = toml.replace(
+        "run = [\"./plutil-wrong\"]\n",
+        &format!("run = [\"./plutil-wrong\"]\nno_faults = {{ why = \"its system never fails\", sha256 = \"{sha}\" }}\n"),
+    );
+    std::fs::write(dir.join("truefit.toml"), marked).unwrap();
+    assert_eq!(without(&dir), Vec::<Value>::new());
+    std::fs::write(dir.join("plutil-wrong"), "#!/bin/sh\necho changed\n").unwrap();
+    let tasks = without(&dir);
+    assert_eq!(tasks.len(), 1);
+    assert!(
+        tasks[0]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("changed since")
+    );
+    assert_eq!(
+        tasks[0]["evidence"]["no_faults"]["why"],
+        "its system never fails"
+    );
+}
+
+#[test]
+fn a_fault_case_the_real_program_cannot_produce_here_is_not_run_with_what_it_needs() {
+    let dir = config(
+        "unreachable",
+        r#"[[standin]]
+name = "t"
+run = ["/bin/sh", "-c", "[ \"$F\" = gone ] && exit 7; echo \"$@\"", "sh"]
+real = ["echo"]
+faults = ["gone"]
+fault_env = "F"
+[[standin.case]]
+name = "ok"
+args = ["hi"]
+[[standin.case]]
+name = "unreachable"
+fault = "gone"
+ready = ["false"]
+needs = "a network that drops"
+"#,
+    );
+    let (code, out) = truefit_in(&dir, &["contract", "--real"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let s = &out["standins"][0];
+    assert_eq!(s["result"], "not run");
+    assert_eq!(s["needs"], "a network that drops");
+    assert_eq!(s["cases"][0]["result"], "agree");
+    assert_eq!(s["cases"][1]["result"], "not run");
+    assert!(!dir.join(".truefit/t.json").exists());
+    // Told its fault, the stand-in exits 7; the real side, never told, would not.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    std::fs::write(
+        dir.join("truefit.toml"),
+        toml.replace("ready = [\"false\"]\n", ""),
+    )
+    .unwrap();
+    let (_, out) = truefit_in(&dir, &["contract", "--real"]);
+    let case = &out["standins"][0]["cases"][1];
+    assert_eq!(
+        case["differ"],
+        serde_json::json!(["exit", "stdout"]),
+        "{out:#}"
+    );
+    assert_eq!(case["standin"]["exit"], 7);
+    assert_eq!(case["real"]["exit"], 0);
+}
+
+#[test]
 fn next_gives_nothing_once_every_tie_is_fresh() {
     let dir = config(
         "fresh",
@@ -400,6 +505,17 @@ args = ["hi"]
     let (code, _) = truefit_in(&dir, &["contract", "--real"]);
     assert_eq!(code, Some(0));
     assert!(!dir.join(".truefit/echo.differ.json").exists());
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    let sha = &out["tasks"][0]["evidence"]["sha256"];
+    assert_eq!(out["tasks"][0]["kind"], "standin-without-faults", "{out:#}");
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let marked = toml.replace(
+        "real = [\"echo\"]\n",
+        &format!(
+            "real = [\"echo\"]\nno_faults = {{ why = \"echo cannot fail\", sha256 = {sha} }}\n"
+        ),
+    );
+    std::fs::write(dir.join("truefit.toml"), marked).unwrap();
     // Passed exactly the default fresh_days (30) ago: still fresh.
     let month = Command::new("date")
         .args(["-u", "-v-30d", "+%F"])

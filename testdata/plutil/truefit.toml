@@ -1,5 +1,6 @@
 # The sample: two stand-ins of macOS plutil, one true to it and one not, and
-# a third without a contract.
+# a third without a contract. plutil declares the one fault it answers;
+# plutil-wrong declares none, so `truefit next` asks for them.
 
 [contract]
 standins = ["./plutil-*"] # where the stand-ins live: each one here needs a [[standin]]
@@ -12,6 +13,8 @@ real = ["plutil"]
 needs = "macOS's /usr/bin/plutil"
 version = ["sw_vers", "-productVersion"]
 compare = ["exit", "stdout", "stderr", "files"]
+faults = ["write-refused"] # each held by a case below whose `fault` names it
+fault_env = "PLUTIL_FAULT" # how the stand-in is told which fault to answer
 # plutil names why a file is no property list; the system reads only that it is not.
 normalise = [{ pattern = ': \(.*\)', replace = ": (<why>)" }]
 
@@ -38,6 +41,14 @@ name = "json-to-file"
 dir = "case"
 args = ["-convert", "json", "-o", "out.json", "ok.plist"]
 files = ["out.json"]
+
+# The system reads only that the write failed: the fault it answers.
+[[standin.case]]
+name = "json-to-unwritable"
+fault = "write-refused"
+dir = "case"
+args = ["-convert", "json", "-o", "nodir/out.json", "ok.plist"]
+files = ["nodir/out.json"]
 
 [[standin]]
 name = "plutil-wrong"

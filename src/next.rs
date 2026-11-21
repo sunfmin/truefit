@@ -37,6 +37,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     let today = contract::days(&contract::today()).unwrap_or(0);
     for s in &config.standin {
         tasks.extend(stale(root, s, today, config.contract.fresh_days));
+        tasks.extend(without_faults(root, s));
         let differ = contract::read(root, &contract::differ_file(&s.name));
         if !differ.is_null() {
             tasks.push(differing(s, differ));
@@ -55,7 +56,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     }
     let next = match (tasks.is_empty(), all) {
         (true, _) => {
-            "nothing: every declared stand-in's contract is fresh, none is without one, no kept seed fails, and no model's covered code changed since its commit"
+            "nothing: every declared stand-in's contract is fresh and declares its faults, none is without one, no kept seed fails, and no model's covered code changed since its commit"
         }
         (false, true) => "do each task by its steps, then run its accept command and commit",
         (false, false) => "do the task by its steps, then run its accept command and commit",
@@ -122,6 +123,29 @@ fn stale(root: &Path, s: &Standin, today: u64, fresh_days: u64) -> Option<Value>
         "files": [file],
         "evidence": {"standin": s.name, "real_run": record, "installed": installed, "fresh_days": fresh_days, "why": why},
         "steps": format!("Run the accept command where `{0}` runs. When every case agrees, commit {file}: the contract is fresh. When a case differs, make the stand-in answer as `{0}` does (the differing case's answers are printed), never the case or a normalise rule to hide what the system reads, and run it again. When it is not run, give it what it `needs` here.", s.real[0]),
+        "accept": format!("truefit contract --real {}", s.name),
+    }))
+}
+
+/// A `standin-without-faults` task, if `s` declares no fault and no
+/// `no_faults` kept for the stand-in as it is now.
+fn without_faults(root: &Path, s: &Standin) -> Option<Value> {
+    let sha = contract::find(root, &s.run[0]).and_then(|p| crate::model::sha256(&p));
+    let kept = s.no_faults.as_ref();
+    if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
+        return None;
+    }
+    let why = if kept.is_some() {
+        "the stand-in changed since it was marked as answering no fault"
+    } else {
+        "it declares no fault: every test through it can only succeed"
+    };
+    Some(json!({
+        "kind": "standin-without-faults",
+        "summary": format!("stand-in {}: {why}", s.name),
+        "files": [s.run[0], contract::CONFIG],
+        "evidence": {"standin": s.name, "run": s.run[0], "sha256": sha, "no_faults": kept.map(|k| json!({"why": k.why, "sha256": k.sha256})), "why": why},
+        "steps": format!("Read the system's code at each call to `{real}` (not the stand-in). For each call whose error the system handles, or drops, after an earlier step took effect (a token issued, a file written, a message sent), name that failure as a fault: add it to the [[standin]]'s `faults` in {cfg}, make the stand-in answer it when its `fault_env` (default TRUEFIT_FAULT) names it, and declare a [[standin.case]] with `fault` set whose real side fails as `{real}` does (an edit it refuses, an unreachable network; one it cannot be made to fail here gets `ready` and `needs`). Then write the system's test that runs that fault through the stand-in and checks what the system does after it. If no call can fail usefully, set no_faults = {{ why = \"<why>\", sha256 = \"<the evidence's sha256>\" }} on the [[standin]]: it is not asked again until the stand-in changes. Commit {cfg}, the stand-in and the test.", real = s.real[0], cfg = contract::CONFIG),
         "accept": format!("truefit contract --real {}", s.name),
     }))
 }
