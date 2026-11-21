@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "case": "lint-bad",
+      "differ": [
+        "exit",
+        "stdout",
+        "stderr"
+      ],
+      "real": {
+        "exit": 1,
+        "files": {},
+        "stderr": "bad.plist: (<why>)\n",
+        "stdout": ""
+      },
+      "result": "differ",
+      "standin": {
+        "exit": 0,
+        "files": {},
+        "stderr": "",
+        "stdout": "bad.plist: OK\n"
+      }
+    },
+    {
+      "case": "json-from-stdin",
+      "differ": [
+        "stdout"
+      ],
+      "real": {
+        "exit": 0,
+        "files": {},
+        "stderr": "",
+        "stdout": "{\"name\":\"truefit\"}"
+      },
+      "result": "differ",
+      "standin": {
+        "exit": 0,
+        "files": {},
+        "stderr": "",
+        "stdout": "{\n  \"name\" : \"truefit\"\n}\n"
+      }
+    }
+  ],
+  "date": "2026-11-21",
+  "version": "27.2"
+}

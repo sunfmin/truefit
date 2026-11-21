@@ -1,0 +1,7 @@
+# truefit's own ties. Its tests drive no program of their own through a
+# stand-in: the stand-ins under testdata/ are samples, each declared by the
+# truefit.toml beside it, which the tests run there. A stand-in truefit's own
+# tests come to need lives in tests/fake-*, and needs a [[standin]] here.
+
+[contract]
+standins = ["tests/fake-*"]

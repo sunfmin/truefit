@@ -2,6 +2,7 @@
 //! `truefit --help` is the manual, and its only copy.
 
 mod contract;
+mod next;
 
 use serde_json::json;
 use std::process::ExitCode;
@@ -17,6 +18,18 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if let ["contract", rest @ ..] = args.as_slice() {
         return contract(rest);
+    }
+    if let ["next", rest @ ..] = args.as_slice() {
+        let all = match rest {
+            [] => Ok(false),
+            ["--all"] => Ok(true),
+            _ => Err(vec![contract::fault(
+                format!("`truefit next {}` is not a next command", rest.join(" ")),
+                "run `truefit next` or `truefit next --all`",
+            )]),
+        };
+        let root = std::env::current_dir().unwrap_or_default();
+        return print(all.and_then(|all| next::run(&root, all).map(|a| (a, true))));
     }
     match answer(args.first().copied()) {
         Ok(out) => {
@@ -56,7 +69,12 @@ fn contract(rest: &[&str]) -> ExitCode {
         )]),
     };
     let root = std::env::current_dir().unwrap_or_default();
-    match real.and_then(|real| contract::run(&root, real)) {
+    print(real.and_then(|real| contract::run(&root, real)))
+}
+
+/// Prints a command's answer: exit 0 when it passed, 1 when not, 2 on faults.
+fn print(answer: Result<(serde_json::Value, bool), Vec<serde_json::Value>>) -> ExitCode {
+    match answer {
         Ok((report, passed)) => {
             println!("{report:#}");
             ExitCode::from(if passed { 0 } else { 1 })

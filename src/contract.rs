@@ -13,23 +13,48 @@ const PARTS: [&str; 4] = ["exit", "stdout", "stderr", "files"];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Config {
+pub struct Config {
     #[serde(default)]
-    standin: Vec<Standin>,
+    pub contract: Settings,
+    #[serde(default)]
+    pub standin: Vec<Standin>,
+}
+
+/// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Settings {
+    #[serde(default)]
+    pub standins: Option<Vec<String>>,
+    #[serde(default = "default_fresh_days")]
+    pub fresh_days: u64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            standins: None,
+            fresh_days: default_fresh_days(),
+        }
+    }
+}
+
+fn default_fresh_days() -> u64 {
+    30
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Standin {
-    name: String,
-    run: Vec<String>,
-    real: Vec<String>,
+pub struct Standin {
+    pub name: String,
+    pub run: Vec<String>,
+    pub real: Vec<String>,
     #[serde(default)]
     needs: String,
     #[serde(default)]
     ready: Vec<String>,
     #[serde(default)]
-    version: Vec<String>,
+    pub version: Vec<String>,
     #[serde(default = "default_compare")]
     compare: Vec<String>,
     #[serde(default)]
@@ -82,7 +107,7 @@ pub fn fault(fault: impl Into<String>, fix: impl Into<String>) -> Value {
 /// alone, or with `real` against the stand-ins and their real programs.
 /// Answers the report and whether every stand-in passed; `Err` is the faults.
 pub fn run(root: &Path, real: Option<Option<&str>>) -> Result<(Value, bool), Vec<Value>> {
-    let standins = load(root)?;
+    let standins = load(root)?.standin;
     let chosen: Vec<&Standin> = match real {
         Some(Some(name)) => match standins.iter().find(|s| s.name == name) {
             Some(s) => vec![s],
@@ -144,7 +169,7 @@ pub fn run(root: &Path, real: Option<Option<&str>>) -> Result<(Value, bool), Vec
     ))
 }
 
-fn load(root: &Path) -> Result<Vec<Standin>, Vec<Value>> {
+pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
     let text = std::fs::read_to_string(root.join(CONFIG)).map_err(|e| {
         vec![fault(
             format!("cannot read {CONFIG} in {}: {e}", root.display()),
@@ -196,7 +221,7 @@ fn load(root: &Path) -> Result<Vec<Standin>, Vec<Value>> {
         }
     }
     if faults.is_empty() {
-        Ok(config.standin)
+        Ok(config)
     } else {
         Err(faults)
     }
@@ -216,7 +241,7 @@ fn check_standin(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) 
         })
         .collect();
     json!({"name": s.name, "result": if ok { "pass" } else { "fail" }, "cases": cases,
-           "real_run": last_real_run(root, &s.name)})
+           "real_run": read(root, &record_file(&s.name))})
 }
 
 fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> Value {
@@ -235,6 +260,7 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     }
     let mut ok = true;
     let mut cases = Vec::new();
+    let mut differing = Vec::new();
     for c in &s.case {
         let (stand, real) = (
             answer(root, &s.run, c, rules),
@@ -247,7 +273,9 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
                 if differ.is_empty() {
                     json!({"case": c.name, "result": "agree"})
                 } else {
-                    json!({"case": c.name, "result": "differ", "differ": differ, "standin": a, "real": b})
+                    let case = json!({"case": c.name, "result": "differ", "differ": differ, "standin": a, "real": b});
+                    differing.push(case.clone());
+                    case
                 }
             }
             (a, b) => {
@@ -259,33 +287,66 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     }
     let mut report =
         json!({"name": s.name, "result": if ok { "pass" } else { "fail" }, "cases": cases});
-    if ok {
-        let version = (!s.version.is_empty())
-            .then(|| quiet(root, &s.version))
-            .flatten()
-            .map(|o| {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string()
-            });
-        let record = json!({"date": today(), "version": version});
-        let dir = root.join(".truefit");
-        let written = std::fs::create_dir_all(&dir).and_then(|()| {
-            std::fs::write(
-                dir.join(format!("{}.json", s.name)),
-                format!("{record:#}\n"),
-            )
-        });
-        if let Err(e) = written {
-            report["result"] = "fail".into();
-            report["fault"] = format!("cannot write .truefit/{}.json: {e}", s.name).into();
+    let record = json!({"date": today(), "version": version(root, s)});
+    // The last real run's differing cases, kept until a real run finds none.
+    let differ = differ_file(&s.name);
+    let mut written = if differing.is_empty() {
+        let path = root.join(&differ);
+        if path.exists() {
+            std::fs::remove_file(path)
+        } else {
+            Ok(())
         }
+    } else {
+        let mut cases = record.clone();
+        cases["cases"] = differing.into();
+        write(root, &differ, &cases)
+    }
+    .map_err(|e| format!("cannot write {differ}: {e}"));
+    if ok {
+        let file = record_file(&s.name);
+        written = written.and_then(|()| {
+            write(root, &file, &record).map_err(|e| format!("cannot write {file}: {e}"))
+        });
+    }
+    if let Err(e) = written {
+        report["result"] = "fail".into();
+        report["fault"] = e.into();
+    }
+    if ok {
         report["real_run"] = record;
     }
     report
+}
+
+/// Where a stand-in's last passing real run is kept: its date and version.
+pub fn record_file(name: &str) -> String {
+    format!(".truefit/{name}.json")
+}
+
+/// Where the last real run's differing cases are kept, while there are any.
+pub fn differ_file(name: &str) -> String {
+    format!(".truefit/{name}.differ.json")
+}
+
+fn write(root: &Path, file: &str, value: &Value) -> std::io::Result<()> {
+    std::fs::create_dir_all(root.join(".truefit"))?;
+    std::fs::write(root.join(file), format!("{value:#}\n"))
+}
+
+/// The first line its `version` command prints here, or None: none declared, or it cannot run.
+pub fn version(root: &Path, s: &Standin) -> Option<String> {
+    (!s.version.is_empty())
+        .then(|| quiet(root, &s.version))
+        .flatten()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        })
 }
 
 fn differ(compare: &[String], a: &Answer, b: &Answer) -> Vec<String> {
@@ -301,15 +362,15 @@ fn differ(compare: &[String], a: &Answer, b: &Answer) -> Vec<String> {
         .collect()
 }
 
-fn last_real_run(root: &Path, name: &str) -> Value {
-    std::fs::read_to_string(root.join(".truefit").join(format!("{name}.json")))
+pub fn read(root: &Path, file: &str) -> Value {
+    std::fs::read_to_string(root.join(file))
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or(Value::Null)
 }
 
 /// Where `program` is: relative to `root` when it names a path, else on PATH.
-fn find(root: &Path, program: &str) -> Option<PathBuf> {
+pub fn find(root: &Path, program: &str) -> Option<PathBuf> {
     if program.contains('/') {
         let p = root.join(program);
         return p.is_file().then_some(p);
@@ -418,7 +479,7 @@ fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Today's date in UTC, as YYYY-MM-DD.
-fn today() -> String {
+pub fn today() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -438,6 +499,21 @@ fn civil(days: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// The days from 1970-01-01 to a YYYY-MM-DD date, or None if it is not one: civil's inverse.
+pub fn days(date: &str) -> Option<u64> {
+    let mut parts = date.splitn(3, '-').map(|p| p.parse::<u64>().ok());
+    let (y, m, d) = (parts.next()??, parts.next()??, parts.next()??);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || y < 1970 {
+        return None;
+    }
+    let y = if m <= 2 { y - 1 } else { y };
+    let (era, yoe) = (y / 400, y % 400);
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    (era * 146_097 + doe).checked_sub(719_468)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,6 +524,12 @@ mod tests {
         assert_eq!(civil(59), "1970-03-01");
         assert_eq!(civil(11_016), "2000-02-29");
         assert_eq!(civil(20_778), "2026-11-21");
+        for n in [0, 59, 11_016, 20_778] {
+            assert_eq!(days(&civil(n)), Some(n));
+        }
+        for bad in ["", "2026-13-01", "2026-11", "x-1-1", "1969-12-31"] {
+            assert_eq!(days(bad), None, "{bad}");
+        }
     }
 
     #[test]
