@@ -72,7 +72,6 @@ pub struct Standin {
     #[serde(default = "default_fault_env")]
     fault_env: String,
     /// Why it answers no fault, kept while the stand-in is the one hashed.
-    #[serde(default)]
     pub no_faults: Option<NoFaults>,
 }
 
@@ -81,13 +80,6 @@ pub struct Standin {
 pub struct NoFaults {
     pub why: String,
     pub sha256: String,
-}
-
-impl Standin {
-    /// The variable and value that tell the stand-in to answer `c`'s fault.
-    fn told<'a>(&'a self, c: &'a Case) -> Option<(&'a str, &'a str)> {
-        Some((self.fault_env.as_str(), c.fault.as_deref()?))
-    }
 }
 
 fn default_compare() -> Vec<String> {
@@ -120,7 +112,6 @@ struct Case {
     #[serde(default)]
     files: Vec<String>,
     /// The fault it holds: the stand-in runs told to answer it.
-    #[serde(default)]
     fault: Option<String>,
     /// Must succeed for the real side to run it; else it is not run, with `needs`.
     #[serde(default)]
@@ -304,13 +295,15 @@ fn check_standin(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) 
     let cases: Vec<Value> = s
         .case
         .iter()
-        .map(|c| match answer(root, &s.run, c, rules, s.told(c)) {
-            Ok(_) => json!({"case": c.name, "result": "ran"}),
-            Err(e) => {
-                ok = false;
-                json!({"case": c.name, "result": "cannot run", "fault": e})
-            }
-        })
+        .map(
+            |c| match answer(root, &s.run, c, rules, Some(&s.fault_env)) {
+                Ok(_) => json!({"case": c.name, "result": "ran"}),
+                Err(e) => {
+                    ok = false;
+                    json!({"case": c.name, "result": "cannot run", "fault": e})
+                }
+            },
+        )
         .collect();
     json!({"name": s.name, "result": if ok { "pass" } else { "fail" }, "cases": cases,
            "real_run": read(root, &record_file(&s.name))})
@@ -327,7 +320,7 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     if find(root, &s.real[0]).is_none() {
         return not_run(format!("`{}` is not found here", s.real[0]));
     }
-    if !s.ready.is_empty() && !matches!(quiet(root, &s.ready), Some(o) if o.status.success()) {
+    if !ready(root, &s.ready) {
         return not_run(format!("`{}` did not succeed", s.ready.join(" ")));
     }
     let mut ok = true;
@@ -335,7 +328,7 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     let mut differing = Vec::new();
     let mut unrun = Vec::new();
     for c in &s.case {
-        if !c.ready.is_empty() && !matches!(quiet(root, &c.ready), Some(o) if o.status.success()) {
+        if !ready(root, &c.ready) {
             let why = format!("`{}` did not succeed", c.ready.join(" "));
             let needs = if c.needs.is_empty() {
                 why.clone()
@@ -347,7 +340,7 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
             continue;
         }
         let (stand, real) = (
-            answer(root, &s.run, c, rules, s.told(c)),
+            answer(root, &s.run, c, rules, Some(&s.fault_env)),
             answer(root, &s.real, c, rules, None),
         );
         let case = match (stand, real) {
@@ -472,6 +465,11 @@ pub fn find(root: &Path, program: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// Whether `argv` is empty or succeeds here: a real run (or one case of it) may go ahead.
+fn ready(root: &Path, argv: &[String]) -> bool {
+    argv.is_empty() || matches!(quiet(root, argv), Some(o) if o.status.success())
+}
+
 fn quiet(root: &Path, argv: &[String]) -> Option<std::process::Output> {
     Command::new(find(root, &argv[0])?)
         .args(&argv[1..])
@@ -488,7 +486,8 @@ fn answer(
     prefix: &[String],
     c: &Case,
     rules: &[(regex_lite::Regex, &str)],
-    told: Option<(&str, &str)>,
+    // The variable that tells the stand-in a case's fault; None on the real side.
+    fault_env: Option<&str>,
 ) -> Result<Answer, String> {
     let program = find(root, &prefix[0]).ok_or_else(|| format!("`{}` is not found", prefix[0]))?;
     let work = scratch()?;
@@ -501,7 +500,7 @@ fn answer(
             .args(&prefix[1..])
             .args(&c.args)
             .envs(&c.env)
-            .envs(told)
+            .envs(fault_env.zip(c.fault.as_deref()))
             .current_dir(&work)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
