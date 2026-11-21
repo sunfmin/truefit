@@ -1,0 +1,4 @@
+#!/bin/sh
+# A stand-in of plutil no contract declares: `truefit next` gives it as a
+# no-contract task.
+echo "$2: OK"

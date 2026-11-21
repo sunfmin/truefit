@@ -218,6 +218,11 @@ fn faults_exit_2() {
         (config("unknown", "foo = 1\n"), vec!["contract"]),
         (config("empty", ""), vec!["contract", "--real", "nobody"]),
         (config("args", ""), vec!["contract", "--frob"]),
+        (config("next-args", ""), vec!["next", "--frob"]),
+        (
+            config("next-unknown", "[contract]\nfresh = 1\n"),
+            vec!["next"],
+        ),
         (
             std::env::temp_dir().join("truefit-no-such-dir-\u{2603}"),
             vec!["contract"],
@@ -277,18 +282,20 @@ name = "c"
 fn a_real_run_whose_record_cannot_be_written_fails() {
     let dir = config(
         "unwritable",
-        "[[standin]]\nname = \"e\"\nrun = [\"/bin/echo\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\nargs = [\"hi\"]\n",
+        "[[standin]]\nname = \"e\"\nrun = [\"/bin/echo\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\nargs = [\"hi\"]\n\
+         [[standin]]\nname = \"d\"\nrun = [\"/bin/echo\", \"x\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\n",
     );
     std::fs::write(dir.join(".truefit"), "a file, not a directory").unwrap();
     let (code, out) = truefit_in(&dir, &["contract", "--real"]);
     assert_eq!(code, Some(1), "{out:#}");
-    assert_eq!(out["standins"][0]["result"], "fail");
-    assert!(
-        out["standins"][0]["fault"]
-            .as_str()
-            .unwrap()
-            .contains(".truefit/e.json")
-    );
+    for (i, file) in [".truefit/e.json", ".truefit/d.differ.json"]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(out["standins"][i]["result"], "fail");
+        let fault = out["standins"][i]["fault"].as_str().unwrap();
+        assert!(fault.contains(file), "{out:#}");
+    }
 }
 
 #[test]
@@ -302,5 +309,127 @@ fn by_default_a_contract_compares_exit_and_stdout() {
     assert_eq!(
         out["standins"][0]["cases"][0]["differ"],
         serde_json::json!(["stdout"])
+    );
+}
+
+#[test]
+fn next_gives_each_kind_of_task_once_on_the_sample_with_its_evidence() {
+    let dir = sample("plutil", "next");
+    let (code, _) = truefit_in(&dir, &["contract", "--real"]);
+    assert_eq!(code, Some(1), "plutil-wrong differs");
+    let (code, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(out["by"].as_str().unwrap().starts_with("truefit "));
+    assert_eq!(
+        out["counts"],
+        serde_json::json!({"no-contract": 1, "stale-contract": 1, "differing-case": 1})
+    );
+    let tasks = out["tasks"].as_array().unwrap();
+    let kind = |k: &str| tasks.iter().find(|t| t["kind"] == k).unwrap();
+    let none = kind("no-contract");
+    assert_eq!(none["evidence"]["standin"], "plutil-undeclared");
+    assert_eq!(
+        none["files"],
+        serde_json::json!(["plutil-undeclared", "truefit.toml"])
+    );
+    assert_eq!(none["accept"], "truefit contract --real plutil-undeclared");
+    let stale = kind("stale-contract");
+    assert_eq!(stale["evidence"]["standin"], "plutil-wrong");
+    assert!(stale["evidence"]["real_run"].is_null());
+    let differ = kind("differing-case");
+    assert_eq!(
+        differ["files"],
+        serde_json::json!(["./plutil-wrong", ".truefit/plutil-wrong.differ.json"])
+    );
+    let lint = &differ["evidence"]["real_run"]["cases"][0];
+    assert_eq!(lint["case"], "lint-bad");
+    assert_eq!(lint["real"]["exit"], 1);
+    assert_eq!(differ["accept"], "truefit contract --real plutil-wrong");
+    for t in tasks {
+        assert!(t["steps"].is_string() && t["summary"].is_string(), "{t:#}");
+    }
+    let (_, first) = truefit_in(&dir, &["next"]);
+    assert_eq!(first["task"], tasks[0]);
+    assert!(first.get("tasks").is_none());
+
+    // A passing run long ago, against another version: stale for both reasons.
+    std::fs::write(
+        dir.join(".truefit/plutil.json"),
+        r#"{"date": "2000-01-01", "version": "0.0-other"}"#,
+    )
+    .unwrap();
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    let plutil = out["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["evidence"]["standin"] == "plutil")
+        .unwrap();
+    let why = plutil["evidence"]["why"].as_array().unwrap();
+    assert_eq!(why.len(), 2, "{plutil:#}");
+    assert!(why[0].as_str().unwrap().contains("over fresh_days (30)"));
+    assert!(why[1].as_str().unwrap().contains("0.0-other"));
+}
+
+#[test]
+fn next_gives_nothing_once_every_tie_is_fresh() {
+    let dir = config(
+        "fresh",
+        r#"[contract]
+standins = ["fakes", "./f*/ech?", "no-such-dir/*"]
+[[standin]]
+name = "echo"
+run = ["fakes/echo"]
+real = ["echo"]
+[[standin.case]]
+name = "c"
+args = ["hi"]
+"#,
+    );
+    std::fs::create_dir_all(dir.join("fakes")).unwrap();
+    let fake = |says: &str| {
+        let path = dir.join("fakes/echo");
+        std::fs::write(&path, format!("#!/bin/sh\necho {says}\n")).unwrap();
+        Command::new("chmod").arg("+x").arg(&path).status().unwrap();
+    };
+    fake("wrong");
+    truefit_in(&dir, &["contract", "--real"]);
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["counts"]["differing-case"], 1, "{out:#}");
+    fake("\"$@\"");
+    let (code, _) = truefit_in(&dir, &["contract", "--real"]);
+    assert_eq!(code, Some(0));
+    assert!(!dir.join(".truefit/echo.differ.json").exists());
+    // Passed exactly the default fresh_days (30) ago: still fresh.
+    let month = Command::new("date")
+        .args(["-u", "-v-30d", "+%F"])
+        .output()
+        .unwrap()
+        .stdout;
+    let month = String::from_utf8(month).unwrap();
+    std::fs::write(
+        dir.join(".truefit/echo.json"),
+        format!(r#"{{"date": "{}", "version": null}}"#, month.trim()),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["tasks"], serde_json::json!([]), "{out:#}");
+    assert_eq!(out["notes"], serde_json::json!([]));
+    assert!(out["next"].as_str().unwrap().starts_with("nothing"));
+    let (_, out) = truefit_in(&dir, &["next"]);
+    assert!(out["task"].is_null());
+}
+
+#[test]
+fn next_without_declared_stand_in_places_says_so() {
+    let dir = config("no-places", "");
+    let (code, out) = truefit_in(&dir, &["next"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(
+        out["notes"][0]
+            .as_str()
+            .unwrap()
+            .contains("[contract] standins")
     );
 }

@@ -1,4 +1,9 @@
-# The sample: two stand-ins of macOS plutil, one true to it and one not.
+# The sample: two stand-ins of macOS plutil, one true to it and one not, and
+# a third without a contract.
+
+[contract]
+standins = ["./plutil-*"] # where the stand-ins live: each one here needs a [[standin]]
+fresh_days = 30          # a real run older than this is stale (the default)
 
 [[standin]]
 name = "plutil"

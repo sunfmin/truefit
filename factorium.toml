@@ -14,9 +14,10 @@ steps = ["packaging/release.sh cut $FACTORIUM_VERSION"]
 formula = "sunfmin/tap/truefit"
 limit = 1800
 
-# slimfit's tasks and a sample of landed changes' mutants, filed as issues
-# while the host is idle (SPEC §1.16).
+# slimfit's tasks and a sample of landed changes' mutants, then truefit's own
+# (`truefit next --all`, built from the base's tip: the truefit being checked
+# reads its own ties), filed as issues while the host is idle (SPEC §1.16).
 [idle]
-tasks = "slimfit --version && slimfit next --all --sample 5"
+tasks = "slimfit --version && slimfit next --all --sample 5 && PATH=$HOME/.cargo/bin:$PATH cargo run --quiet --release -- next --all"
 every = 86400
 limit = 1800

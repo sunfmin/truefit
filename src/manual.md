@@ -35,8 +35,10 @@ Each declared stand-in and its real program answer the same cases alike.
   Never in a gate: the real program may be slow, costly or absent. A case
   whose answers differ fails, and prints both (`standin`, `real`) and which
   parts `differ`. When every case agrees, the date and the real program's
-  version are written to `.truefit/<name>.json`: commit it, so the contract's
-  freshness is in git and not on one host.
+  version are written to `.truefit/<name>.json`. When a case differs, its
+  answers are written to `.truefit/<name>.differ.json`, until a real run
+  finds no case differing and removes it. Commit `.truefit/`, so the
+  contract's freshness and its differences are in git and not on one host.
 - A real program truefit cannot run here (not found, or its `ready` command
   fails: no login, no account, no device) is `not run`, with what it `needs`.
   It is never a pass: run it where it can run.
@@ -47,6 +49,10 @@ them are relative to it, others are looked up on PATH.
 ### `truefit.toml`
 
 ```toml
+[contract]
+standins = ["tests/fake-*", "tests/fakes"] # where the repo's stand-ins live
+fresh_days = 30                       # a passing real run older is stale (default 30)
+
 [[standin]]
 name = "git"                          # what `--real <name>` names
 run = ["tests/fake-git"]              # the stand-in's command line
@@ -83,11 +89,36 @@ more. A behaviour the system relies on that no case holds is untested
 against reality; when one breaks in production, add the case first.
 
 `testdata/plutil/` is a worked example: a stand-in of macOS `plutil` that
-agrees, and a wrong one that differs.
+agrees, a wrong one that differs, and one no contract declares.
+
+## `truefit next [--all]`
+
+What to do about the repo's ties: the next task (`task`), or with `--all`
+every one (`tasks`), each with its `kind`, `summary`, `files`, `evidence`,
+`steps` and the `accept` command that holds it done; `counts` per kind,
+`notes` on what was not looked for, and `by`, the truefit that read them. Do
+one task by its steps, run its accept command, commit, then `truefit next`
+again. No task is an answer: every tie is fresh. It exits 0 with tasks or
+without, 2 on a fault in `truefit.toml`. It runs each stand-in's `version`
+command, never a case.
+
+- `no-contract`: a file under `[contract] standins` (paths, or globs whose
+  `*` and `?` match within one path part; a directory stands for its files)
+  that no `[[standin]]`'s `run` names. Where the stand-ins live is declared,
+  not guessed: without `standins` none is looked for, and `notes` says so.
+- `stale-contract`: a declared stand-in whose last passing real run
+  (`.truefit/<name>.json`) is missing, older than `fresh_days`, or against
+  another version than its `version` command answers here now.
+- `differing-case`: the last real run found cases whose answers differ
+  (`.truefit/<name>.differ.json`, with both answers): make the stand-in
+  answer as the real program does.
+
+The answer has the shape of `slimfit next --all`'s, so a factorium
+`[idle]` tasks line files its tasks as issues, one open issue per kind:
+`tasks = "slimfit --version && slimfit next --all && truefit next --all"`.
 
 ## To come
 
-- `truefit next`: the next task, with its evidence and how to accept it.
 - `truefit sim`: seeded runs of the system's own simulation; a failing seed
   reruns exactly.
 - `truefit model`: the system's models, and its real runs checked as traces of
