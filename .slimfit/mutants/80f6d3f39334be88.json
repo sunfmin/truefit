@@ -1,0 +1,27 @@
+{
+  "tree": "df7ff14eb854c229082e0d3060ffbf2a19356394+d1fba762150c532c",
+  "picker": "codex:01a1fd61-919a-7770-b37e-07f98fc370ac:default",
+  "author": "claude-code:8787dd70-1026-5a5c-8c7d-a1fd8572a456:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/model.rs:490:46: replace && with || in unbacked",
+        "why": "The fixture satisfies both conditions, so it misses a disallowed trace that breaks a different invariant.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/promise.rs:132:28: replace > with >= in run",
+        "why": "The tests assert promise statuses and task evidence, leaving room for model-backing advice to appear when zero promises are unbacked.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:815:5: replace unreached -> Option<String> with None",
+        "why": "The fixture's missing invariant and missing simulation coverage affect the same promise, so the simulation can preserve its unreached status even if the model check is skipped.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}
