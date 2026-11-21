@@ -3,6 +3,10 @@
 
 use std::process::ExitCode;
 
+// The version build.rs stamps; its tests run here.
+#[cfg(test)]
+mod version;
+
 const MANUAL: &str = include_str!("manual.md");
 
 fn main() -> ExitCode {
@@ -23,7 +27,7 @@ fn main() -> ExitCode {
 fn answer(command: Option<&str>) -> Result<String, String> {
     match command {
         None | Some("--help" | "-h" | "help") => Ok(MANUAL.to_string()),
-        Some("--version" | "-V") => Ok(format!("truefit {}\n", env!("CARGO_PKG_VERSION"))),
+        Some("--version" | "-V") => Ok(format!("truefit {}\n", env!("TRUEFIT_VERSION"))),
         Some(other) => Err(format!(
             "truefit: no command `{other}`; `truefit --help` is the manual"
         )),
@@ -33,8 +37,8 @@ fn answer(command: Option<&str>) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn version_names_truefit_and_its_package_version() {
-        let version = Ok(format!("truefit {}\n", env!("CARGO_PKG_VERSION")));
+    fn version_names_truefit_and_the_stamped_version() {
+        let version = Ok(format!("truefit {}\n", env!("TRUEFIT_VERSION")));
         assert_eq!(super::answer(Some("--version")), version);
         assert_eq!(super::answer(Some("-V")), version);
     }

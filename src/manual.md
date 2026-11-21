@@ -8,7 +8,14 @@ its tie to the real thing: a stand-in that answers as the real program does
 not makes every test pass while the real system breaks. truefit holds those
 ties, and tells you what to do where one is missing or stale.
 
-Nothing is built yet. The commands to come, in order:
+truefit is installed as a Homebrew formula (`brew install sunfmin/tap/truefit`;
+factorium cuts each version and upgrades it). `truefit --version` names the
+release, `truefit X.Y.Z`, as its tag `vX.Y.Z`; a build that is not a release
+says where it was built, `truefit X.Y.Z+<commits>.g<commit>[.dirty]`: the
+nearest version tag (or, without one, Cargo.toml's version), the commits since
+it, and the commit.
+
+Nothing else is built yet. The commands to come, in order:
 
 - `truefit contract`: each declared stand-in and its real program answer the
   same cases alike.

@@ -1,11 +1,18 @@
-# How factorium gates truefit (factorium SPEC.md §5). No [cut] yet: truefit#1
-# adds packaging/release.sh and the cut.
+# How factorium gates and cuts truefit (factorium SPEC.md §5).
 
 [gate]
 fast = "./gate.sh"
 fast_limit = 600
 slow = "./gate.sh"
 slow_limit = 600
+
+# A cut: packaging/release.sh builds the tag's version and publishes the
+# archive and Formula/truefit.rb to the tap sunfmin/homebrew-tap; factorium
+# tags HEAD and installs the formula.
+[cut]
+steps = ["packaging/release.sh cut $FACTORIUM_VERSION"]
+formula = "sunfmin/tap/truefit"
+limit = 1800
 
 # slimfit's tasks and a sample of landed changes' mutants, filed as issues
 # while the host is idle (SPEC §1.16).
