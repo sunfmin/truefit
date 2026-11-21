@@ -1205,7 +1205,15 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
         "{out:#}"
     );
 
-    // A sim run older than fresh_days reaches nothing.
+    // A sim run fresh_days old is fresh; one older reaches nothing.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    std::fs::write(
+        dir.join("truefit.toml"),
+        format!("[contract]\nfresh_days = 0\n{toml}"),
+    )
+    .unwrap();
+    let (_, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(out["promises"][0]["status"], "checked", "{out:#}");
     let reached = dir.join(".truefit/sim.reached.json");
     let old = std::fs::read_to_string(&reached).unwrap();
     let date = serde_json::from_str::<Value>(&old).unwrap()["date"]
@@ -1260,6 +1268,37 @@ fn a_promise_of_what_runs_at_once_needs_sim_and_model_or_a_reason() {
     std::fs::write(dir.join("truefit.toml"), plain).unwrap();
     let (code, _) = truefit_in(&dir, &["promise"]);
     assert_eq!(code, Some(1));
+    // One of the two it needs is not enough.
+    let sim_only = promise("").replace("check = [\"test\"]", "check = [\"sim\"]");
+    std::fs::write(dir.join("truefit.toml"), sim_only).unwrap();
+    let (_, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(out["promises"][0]["status"], "unchecked", "{out:#}");
+}
+
+#[test]
+fn a_candidate_marked_a_promise_fails_until_registered_and_readmes_are_read_by_default() {
+    let toml = "[[standin]]\nname = \"git\"\nrun = [\"true\"]\nreal = [\"true\"]\n[[standin.case]]\nname = \"c\"\n";
+    let dir = config("promise-default", toml);
+    std::fs::write(dir.join("README.md"), "A ref is never moved backwards.\n").unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let hash = out["candidates"]["unmarked"][0]["hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (code, out) = truefit_in(&dir, &["promise", "--mark", &hash, "promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(
+        out["candidates"]["unregistered"][0]["source"],
+        "README.md:1"
+    );
+    let registered = format!(
+        "{toml}[[promise]]\nname = \"no-rewind\"\nsays = \"A ref is never moved backwards.\"\nsource = \"README.md:1\"\ncheck = [\"contract git\"]\n"
+    );
+    std::fs::write(dir.join("truefit.toml"), registered).unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "checked");
 }
 
 #[test]
