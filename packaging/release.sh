@@ -52,10 +52,17 @@ package() {
     sha=$(shasum -a 256 "$DIST/$archive" | cut -d' ' -f1)
     release=truefit-v$2
     formula=$DIST/truefit.rb
+    # The crate's license, as Cargo.toml states it: the formula says the same.
+    license=$(sed -n 's/^license = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+    [ -n "$license" ] || {
+        echo "release: Cargo.toml states no license" >&2
+        exit 1
+    }
     cat > "$formula" <<FORMULA
 class Truefit < Formula
   desc "Keeps a system's tests and models true to the real system"
   homepage "$REPO"
+  license "$license"
   url "https://github.com/$TAP/releases/download/$release/$archive"
   sha256 "$sha"
   version "$2"
@@ -73,6 +80,10 @@ class Truefit < Formula
 end
 FORMULA
     ruby -c "$formula" >/dev/null
+    grep -qx "  license \"$license\"" "$formula" || {
+        echo "release: $formula does not declare license \"$license\"" >&2
+        exit 1
+    }
 }
 
 # check_tag <tag>: a version tag vX.Y.Z, or usage.
