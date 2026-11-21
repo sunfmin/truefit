@@ -1,0 +1,6 @@
+{
+  "tree": "407202f80fb49eb39d682f2e6a1f918d695b9f36+d1fba762150c532c",
+  "picker": "codex:01a1fd3e-8ae3-7542-8248-349af9a9a3f3:default",
+  "author": "claude-code:2f2fb2a1-14b4-5c28-95d6-7e3e2887bbdc:opus",
+  "none": "A default model read would fail the asserted state count and depth, and both simulation replacements would fail the assertions on the new seed report."
+}
