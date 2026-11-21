@@ -1069,6 +1069,11 @@ fn model_faults_exit_2() {
             vec!["model", "--frob"],
             "not a model command",
         ),
+        (
+            plain.clone(),
+            vec!["model", "--frob", "--trace", "t.jsonl"],
+            "not a model command",
+        ),
         (plain, vec!["model", "m", "--trace"], "not a model command"),
         (
             traced.clone(),
