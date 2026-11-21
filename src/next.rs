@@ -56,7 +56,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     }
     let next = match (tasks.is_empty(), all) {
         (true, _) => {
-            "nothing: every declared stand-in's contract is fresh, none is without one, no kept seed fails, no model's covered code changed since its commit, and every promise is registered, checked and reached"
+            "nothing: every declared stand-in's contract is fresh, none is without one, no kept seed fails, no model's covered code changed since its commit, and every promise is registered, checked, reached and backed"
         }
         (false, true) => "do each task by its steps, then run its accept command and commit",
         (false, false) => "do the task by its steps, then run its accept command and commit",
