@@ -1,0 +1,10 @@
+{
+  "tree": "18ba21afd24e1824d2e0f93fbb4ab1578820989a+d1fba762150c532c",
+  "lines": 385,
+  "serves": "truefit#6: truefit sim, seeded runs of a repo's simulation with failing seeds kept and rerun exactly",
+  "considered": "contract.rs's record write and read, next.rs's directory listing and task shape, contract::find and fault for running the declared command",
+  "reviewer": "claude-code:a6b9ecf7a2bf73226:opus",
+  "author": "claude-code:7c673545-c8ad-5092-8d09-2987b9f8241a:opus",
+  "cut": "sim.rs write: use contract::write with the file's own parent dir; all_kept: use next::entries with strip_suffix(.json), no dedup; one steps(record) helper for report and tasks",
+  "answer": "made all three: contract::write now makes the file's parent dir, next::entries is pub and lists kept seeds, steps() is shared"
+}

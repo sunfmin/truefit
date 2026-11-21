@@ -1,0 +1,4 @@
+#!/bin/sh
+# The same simulation made nondeterministic on purpose: a restarted worker is
+# named by this process's id.
+exec awk -v seed="$1" -v pid="$$" -f "$(dirname "$0")/queue.awk"
