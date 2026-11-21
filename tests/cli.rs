@@ -631,6 +631,8 @@ fn sim_runs_new_seeds_by_count_or_budget_and_stops_at_a_run_without_a_verdict() 
     assert!(out["next"].as_str().unwrap().starts_with("nothing"));
     let (_, out) = truefit_in(&dir, &["sim", "--budget", "0"]);
     assert_eq!(out["new"]["ran"], 1, "a budget runs at least one seed");
+    let (_, out) = truefit_in(&dir, &["sim", "--budget", "0.2"]);
+    assert!(out["new"]["ran"].as_u64().unwrap() > 1, "{out:#}");
     let (code, out) = truefit_in(&dir, &["sim", "--seed", "a-1_B"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["seed"]["result"], "passes");
@@ -641,6 +643,13 @@ fn sim_runs_new_seeds_by_count_or_budget_and_stops_at_a_run_without_a_verdict() 
     let (code, out) = truefit_in(&dir, &["sim", "--seed", "k"]);
     assert_eq!(code, Some(1), "{out:#}");
     assert_eq!(kept_seeds(&dir), ["k.json"]);
+    // Flagged nondeterministic once, it is confirmed by two runs, not by one alike.
+    let file = dir.join(".truefit/seeds/k.json");
+    let mut record: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    record["nondeterministic"] = serde_json::json!({"line": 1, "then": 1, "now": 2});
+    std::fs::write(&file, record.to_string()).unwrap();
+    let (_, out) = truefit_in(&dir, &["sim", "--seed", "k"]);
+    assert_eq!(out["seed"]["result"], "fails", "{out:#}");
     verdict("boom\n");
     for args in [&["sim", "--seed", "k"][..], &["sim", "--seed", "new"]] {
         let (code, out) = truefit_in(&dir, args);
@@ -662,6 +671,16 @@ fn sim_runs_new_seeds_by_count_or_budget_and_stops_at_a_run_without_a_verdict() 
         "a broken run stops new seeds: {out:#}"
     );
     assert_eq!(kept_seeds(&dir), ["k.json"]);
+
+    // Each `truefit sim` draws new seeds of its own.
+    verdict("{\"verdict\":\"fail\"}\n");
+    for _ in 0..2 {
+        truefit_in(&dir, &["sim", "--seeds", "1"]);
+    }
+    assert_eq!(kept_seeds(&dir).len(), 3, "{:?}", kept_seeds(&dir));
+    for seed in kept_seeds(&dir).iter().filter(|s| *s != "k.json") {
+        std::fs::remove_file(dir.join(".truefit/seeds").join(seed)).unwrap();
+    }
 
     // A kept seed that passes again stays kept; forgotten only while it can be removed.
     verdict("{\"verdict\":\"pass\"}\n");
@@ -686,6 +705,17 @@ fn sim_runs_new_seeds_by_count_or_budget_and_stops_at_a_run_without_a_verdict() 
             .starts_with("cannot remove")
     );
     assert_eq!(kept_seeds(&dir), ["k.json"]);
+}
+
+#[test]
+fn sim_runs_20_new_seeds_by_default() {
+    let dir = config(
+        "sim-default",
+        "[sim]\nrun = [\"/bin/sh\", \"-c\", \"echo '{\\\"verdict\\\":\\\"pass\\\"}'\"]\n",
+    );
+    let (code, out) = truefit_in(&dir, &["sim"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["new"]["ran"], 20);
 }
 
 #[test]
@@ -736,7 +766,7 @@ fn sim_faults_exit_2() {
         ),
         (
             sim.clone(),
-            vec!["sim", "--budget", "-1"],
+            vec!["sim", "--budget", "soon"],
             "not a sim command",
         ),
         (sim, vec!["sim", "--frob"], "not a sim command"),
