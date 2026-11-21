@@ -464,7 +464,7 @@ fn normalise(text: &str, work: &Path, rules: &[(regex_lite::Regex, &str)]) -> St
     t
 }
 
-fn scratch() -> Result<PathBuf, String> {
+pub fn scratch() -> Result<PathBuf, String> {
     use std::sync::atomic::{AtomicU32, Ordering};
     static N: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(

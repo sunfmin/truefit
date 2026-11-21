@@ -213,21 +213,26 @@ fn sha256(path: &Path) -> Option<String> {
     Some(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// What one TLC run printed, and how long it took; None: past the limit.
+/// What one TLC run printed, what that says, whether it completed without
+/// an error, and how long it took.
 struct Tlc {
     output: String,
+    read: Read,
+    completed: bool,
     seconds: f64,
     timed_out: bool,
 }
 
+/// Runs TLC on `spec` (the model `m`'s modules beside it) in `work`, then removes `work`.
 fn run_tlc(
     jar: &Path,
-    work: &Path,
-    lib: &Path,
+    root: &Path,
+    m: &Model,
+    work: PathBuf,
     cfg: &Path,
     spec: &Path,
-    limit: u64,
 ) -> Result<Tlc, Vec<Value>> {
+    let lib = root.join(&m.spec);
     let log = work.join("tlc.out");
     let cannot = |e: std::io::Error| {
         vec![fault(
@@ -239,7 +244,10 @@ fn run_tlc(
     let start = Instant::now();
     let mut child = Command::new("java")
         .arg("-XX:+UseParallelGC")
-        .arg(format!("-DTLA-Library={}", lib.display()))
+        .arg(format!(
+            "-DTLA-Library={}",
+            lib.parent().unwrap_or(root).display()
+        ))
         .arg("-cp")
         .arg(jar)
         .args(["tlc2.TLC", "-metadir"])
@@ -247,7 +255,7 @@ fn run_tlc(
         .arg("-config")
         .arg(cfg)
         .arg(spec)
-        .current_dir(work)
+        .current_dir(&work)
         .stdin(Stdio::null())
         .stdout(file.try_clone().map_err(cannot)?)
         .stderr(file)
@@ -257,31 +265,27 @@ fn run_tlc(
         if child.try_wait().map_err(cannot)?.is_some() {
             break false;
         }
-        if start.elapsed() > Duration::from_secs(limit) {
+        if start.elapsed() > Duration::from_secs(m.limit) {
             let _ = child.kill();
             let _ = child.wait();
             break true;
         }
         std::thread::sleep(Duration::from_millis(20));
     };
+    let output = std::fs::read_to_string(&log).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&work);
     Ok(Tlc {
-        output: std::fs::read_to_string(&log).unwrap_or_default(),
+        read: read(&output),
+        completed: output.contains("Model checking completed. No error has been found."),
+        output,
         seconds: (start.elapsed().as_secs_f64() * 100.0).round() / 100.0,
         timed_out,
     })
 }
 
 /// A fresh directory for one TLC run's files, outside the repo.
-fn workdir(tag: &str) -> Result<PathBuf, Vec<Value>> {
-    let dir = std::env::temp_dir().join(format!("truefit-tlc-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|e| {
-        vec![fault(
-            format!("cannot make {}: {e}", dir.display()),
-            "free the temporary directory",
-        )]
-    })?;
-    Ok(dir)
+fn workdir() -> Result<PathBuf, Vec<Value>> {
+    contract::scratch().map_err(|e| vec![fault(e, "free the temporary directory")])
 }
 
 fn paths(root: &Path, m: &Model) -> Result<(PathBuf, PathBuf), Vec<Value>> {
@@ -304,18 +308,12 @@ fn paths(root: &Path, m: &Model) -> Result<(PathBuf, PathBuf), Vec<Value>> {
 
 fn check(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>> {
     let (spec, cfg) = paths(root, m)?;
-    let work = workdir(&m.name)?;
-    let lib = spec.parent().unwrap_or(root);
-    let t = run_tlc(jar, &work, lib, &cfg, &spec, m.limit)?;
-    let _ = std::fs::remove_dir_all(&work);
+    let t = run_tlc(jar, root, m, workdir()?, &cfg, &spec)?;
     let mut r = json!({"name": m.name, "spec": m.spec, "seconds": t.seconds, "limit": m.limit});
-    let read = read(&t.output);
+    let read = t.read;
     if t.timed_out {
         r["result"] = "timed out".into();
-    } else if t
-        .output
-        .contains("Model checking completed. No error has been found.")
-    {
+    } else if t.completed {
         r["result"] = "passes".into();
     } else if let Some(error) = read.error {
         r["result"] = "fails".into();
@@ -464,7 +462,7 @@ fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, 
         matches.join("\n     /\\ "),
     );
     let config = std::fs::read_to_string(&cfg).unwrap_or_default();
-    let work = workdir(&format!("{}-trace", m.name))?;
+    let work = workdir()?;
     let (trace_tla, trace_cfg) = (work.join("TruefitTrace.tla"), work.join("TruefitTrace.cfg"));
     let written = std::fs::write(&trace_tla, tla).and_then(|()| {
         std::fs::write(
@@ -478,10 +476,8 @@ fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, 
             "free the temporary directory",
         )]
     })?;
-    let lib = spec.parent().unwrap_or(root);
-    let t = run_tlc(jar, &work, lib, &trace_cfg, &trace_tla, m.limit)?;
-    let _ = std::fs::remove_dir_all(&work);
-    let read = read(&t.output);
+    let t = run_tlc(jar, root, m, work, &trace_cfg, &trace_tla)?;
+    let read = t.read;
     let mut r =
         json!({"file": file, "model": m.name, "records": records.len(), "seconds": t.seconds});
     if t.timed_out {
@@ -489,10 +485,7 @@ fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, 
         r["output"] = tail(&t.output).into();
     } else if read.error.as_deref() == Some("Invariant TruefitUnfinished is violated.") {
         r["result"] = "allowed".into();
-    } else if t
-        .output
-        .contains("Model checking completed. No error has been found.")
-    {
+    } else if t.completed {
         // The search ends one state past the last record it allowed.
         let at = read.depth.unwrap_or(1).max(1) as usize;
         r["result"] = "disallowed".into();
@@ -557,28 +550,7 @@ fn tla_string(s: &str) -> String {
 
 /// The CONSTANT sections of a TLC config, which a trace's check keeps.
 fn constants(config: &str) -> String {
-    const KEYWORDS: [&str; 20] = [
-        "CONSTANT",
-        "CONSTANTS",
-        "INIT",
-        "NEXT",
-        "SPECIFICATION",
-        "INVARIANT",
-        "INVARIANTS",
-        "PROPERTY",
-        "PROPERTIES",
-        "SYMMETRY",
-        "VIEW",
-        "CONSTRAINT",
-        "CONSTRAINTS",
-        "ACTION_CONSTRAINT",
-        "ACTION_CONSTRAINTS",
-        "CHECK_DEADLOCK",
-        "ALIAS",
-        "POSTCONDITION",
-        "TYPE",
-        "TYPE_CONSTRAINT",
-    ];
+    let keywords = "CONSTANT CONSTANTS INIT NEXT SPECIFICATION INVARIANT INVARIANTS PROPERTY PROPERTIES SYMMETRY VIEW CONSTRAINT CONSTRAINTS ACTION_CONSTRAINT ACTION_CONSTRAINTS CHECK_DEADLOCK ALIAS POSTCONDITION TYPE TYPE_CONSTRAINT";
     let mut keep = false;
     let mut out = Vec::new();
     for line in config.lines() {
@@ -586,7 +558,7 @@ fn constants(config: &str) -> String {
         if let Some(word) = line
             .split_whitespace()
             .next()
-            .filter(|w| KEYWORDS.contains(w))
+            .filter(|w| keywords.split(' ').any(|k| k == *w))
         {
             keep = word.starts_with("CONSTANT");
         }
