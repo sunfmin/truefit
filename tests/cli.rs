@@ -544,7 +544,9 @@ args = ["hi"]
     let (code, out) = truefit_in(&dir, &["next", "--all"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["tasks"], serde_json::json!([]), "{out:#}");
-    assert_eq!(out["notes"], serde_json::json!([]));
+    let notes = out["notes"].as_array().unwrap();
+    assert_eq!(notes.len(), 1, "{out:#}");
+    assert!(notes[0].as_str().unwrap().contains("in no git repo"));
     assert!(out["next"].as_str().unwrap().starts_with("nothing"));
     let (_, out) = truefit_in(&dir, &["next"]);
     assert!(out["task"].is_null());
@@ -1611,6 +1613,153 @@ fn promise_faults_exit_2() {
     assert_eq!(out["error"].as_array().unwrap().len(), 6, "{out:#}");
     let (code, _) = truefit_in(&dir, &["promise", "--frob"]);
     assert_eq!(code, Some(2));
+}
+
+#[test]
+fn a_file_fixed_twice_is_owed_a_promise_until_a_check_covers_it_or_it_is_marked_not() {
+    let dir = sample("history", "fixed-often");
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(
+        out["notes"][1]
+            .as_str()
+            .unwrap()
+            .contains("files fixed often are not looked for"),
+        "{out:#}"
+    );
+    assert!(
+        Command::new("sh")
+            .arg(dir.join("history"))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (code, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        out["counts"],
+        serde_json::json!({"fixed-often": 1}),
+        "{out:#}"
+    );
+    let task = &out["tasks"][0];
+    assert_eq!(
+        task["summary"],
+        "ledger.awk was changed by 2 fixes in 180 days, and no registered promise's check covers it"
+    );
+    let fixes: Vec<&str> = task["evidence"]["commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["fix"].as_str().unwrap())
+        .collect();
+    assert_eq!(fixes[0], "ledger#2", "{task:#}");
+    assert_eq!(
+        fixes[1].len(),
+        40,
+        "a fix naming no issue is its own commit: {task:#}"
+    );
+    let hash = task["evidence"]["hash"].as_str().unwrap().to_string();
+    for args in [
+        &["not"][..],
+        &["not", "--why", " "],
+        &["promise", "--why", "x"],
+    ] {
+        let mut mark = vec!["promise", "--mark", &hash];
+        mark.extend(args);
+        let (code, out) = truefit_in(&dir, &mark);
+        assert_eq!(code, Some(2), "{args:?}: {out:#}");
+        let fault = out["error"][0]["fault"].as_str().unwrap();
+        assert!(
+            fault.contains("marked only `not` with its `--why`"),
+            "{fault}"
+        );
+    }
+    let (code, _) = truefit_in(
+        &dir,
+        &[
+            "promise",
+            "--mark",
+            &hash,
+            "not",
+            "--why",
+            "two slips, no promise",
+        ],
+    );
+    assert_eq!(code, Some(0));
+    let marks = std::fs::read_to_string(dir.join(".truefit/promises.json")).unwrap();
+    assert!(marks.contains("two slips, no promise"), "{marks}");
+    let (_, out) = truefit_in(&dir, &["next"]);
+    assert_eq!(out["task"], Value::Null, "{out:#}");
+    // A new commit to the file asks again; a promise whose check covers it answers.
+    std::fs::write(dir.join("ledger.awk"), "{ charged[$1] += $2 }\n").unwrap();
+    let git = |args: &[&str]| {
+        let ok = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        assert!(ok.success());
+    };
+    git(&["commit", "-qam", "Simpler"]);
+    let (_, out) = truefit_in(&dir, &["next"]);
+    assert_eq!(out["task"]["kind"], "fixed-often", "{out:#}");
+    assert_ne!(out["task"]["evidence"]["hash"], hash.as_str());
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap()
+        + "[sim]\nrun = [\"./sim\"]\ncode = [\"*.awk\"]\n\n[[promise]]\nname = \"charged-once\"\nsays = \"An order is charged once.\"\nsource = \"README.md:1\"\ncheck = [\"sim\"]\n";
+    std::fs::write(dir.join("truefit.toml"), toml).unwrap();
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["counts"].get("fixed-often"), None, "{out:#}");
+}
+
+#[test]
+fn a_failing_seed_whose_invariant_no_promise_names_is_owed_one() {
+    let dir = sample("sim", "seed-promise");
+    let (code, _) = truefit_in(&dir, &["sim", "--seeds", "10"]);
+    assert_eq!(code, Some(1));
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(
+        out["counts"].get("failing-seed-promise"),
+        None,
+        "applied-once is registered: {out:#}"
+    );
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    std::fs::write(
+        dir.join("truefit.toml"),
+        toml.replace("name = \"applied-once\"", "name = \"applied-at-most-once\""),
+    )
+    .unwrap();
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["counts"]["failing-seed-promise"], 1, "{out:#}");
+    let task = out["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "failing-seed-promise")
+        .unwrap();
+    assert_eq!(task["evidence"]["invariant"], "applied-once");
+    assert_eq!(
+        task["evidence"]["seeds"].as_array().unwrap().len(),
+        kept_seeds(&dir).len()
+    );
+    let hash = task["evidence"]["hash"].as_str().unwrap();
+    let (code, _) = truefit_in(
+        &dir,
+        &[
+            "promise",
+            "--mark",
+            hash,
+            "not",
+            "--why",
+            "the sample's own check",
+        ],
+    );
+    assert_eq!(
+        code,
+        Some(1),
+        "marked; the renamed promise is still unreached"
+    );
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["counts"].get("failing-seed-promise"), None, "{out:#}");
 }
 
 #[test]

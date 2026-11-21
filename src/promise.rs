@@ -21,33 +21,31 @@ const WORDS: &str = "never, always, at most, exactly once, only, within, every";
 /// does not choose: one that needs both `sim` and `model`.
 const CONCURRENT: &str = "at once, concurrent, concurrently, in parallel, simultaneous, race, out of order, reorder, crash, crashes, restart, retry, retries, lease, queue, lost, twice, deliver, delivered, redelivered, exactly once, at least once";
 
-/// `[promises]`: the files whose sentences are candidates.
+/// `[promises]`: the files whose sentences are candidates, and how many
+/// days of history the fixes are read from.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, default)]
 pub struct Sources {
-    #[serde(default = "default_sources")]
     sources: Vec<String>,
+    pub history_days: u64,
 }
 
 impl Default for Sources {
     fn default() -> Self {
         Sources {
-            sources: default_sources(),
+            sources: ["SPEC.md", "README.md", "docs/adr/*.md"]
+                .map(String::from)
+                .into(),
+            history_days: 180,
         }
     }
-}
-
-fn default_sources() -> Vec<String> {
-    ["SPEC.md", "README.md", "docs/adr/*.md"]
-        .map(String::from)
-        .into()
 }
 
 /// `[[promise]]`: one promise, the sentence that makes it, and its checks.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Promise {
-    name: String,
+    pub name: String,
     says: String,
     source: String,
     #[serde(default)]
@@ -61,7 +59,7 @@ pub struct Promise {
 }
 
 impl Promise {
-    fn checks(&self) -> Vec<(&str, &str)> {
+    pub fn checks(&self) -> Vec<(&str, &str)> {
         let mut c: Vec<(&str, &str)> = self
             .check
             .iter()
@@ -111,12 +109,13 @@ pub fn faults(config: &Config) -> Vec<Value> {
     faults
 }
 
-/// `truefit promise [--mark <hash> <promise|not> ...]`.
-pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
+/// `truefit promise [--mark <hash> <promise|not> ... [--why <reason>]]`.
+pub fn run(root: &Path, marks: &[&str], why: Option<&str>) -> Result<(Value, bool), Vec<Value>> {
     let config = contract::load(root)?;
     let found = sentences(root, &config);
     if !marks.is_empty() {
-        mark(root, &found, marks)?;
+        let owed = crate::history::found(root, &config).0;
+        mark(root, &found, &owed, marks, why)?;
     }
     let promises: Vec<Value> = config
         .promise
@@ -328,7 +327,7 @@ fn sentences_of(block: &[(usize, &str)], out: &mut Vec<(usize, String)>) {
 }
 
 /// Whether `text` has any of `words` (`, `-separated), each as whole words, in any case.
-fn has_any(text: &str, words: &str) -> bool {
+pub fn has_any(text: &str, words: &str) -> bool {
     let words_of = |s: &str| {
         let words: Vec<String> = s
             .to_lowercase()
@@ -350,14 +349,21 @@ fn plain(s: &str) -> String {
         .join(" ")
 }
 
-fn hash(sentence: &str) -> String {
+pub fn hash(sentence: &str) -> String {
     use sha2::Digest;
     let digest = sha2::Sha256::digest(plain(sentence));
     digest[..6].iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Records each `<hash> <promise|not>` pair given to `--mark`.
-fn mark(root: &Path, found: &[Value], pairs: &[&str]) -> Result<(), Vec<Value>> {
+/// Records each `<hash> <promise|not>` pair given to `--mark`: of a
+/// candidate, or (`not`, with `why`) of a task the history owes.
+fn mark(
+    root: &Path,
+    found: &[Value],
+    owed: &[Value],
+    pairs: &[&str],
+    why: Option<&str>,
+) -> Result<(), Vec<Value>> {
     let mut marks = contract::read(root, MARKS);
     if !marks.is_object() {
         marks = json!({});
@@ -366,14 +372,25 @@ fn mark(root: &Path, found: &[Value], pairs: &[&str]) -> Result<(), Vec<Value>> 
     for pair in pairs.chunks(2) {
         let (hash, mark) = (pair[0], pair.get(1).copied().unwrap_or(""));
         let candidate = found.iter().find(|c| c["hash"] == hash);
-        match (candidate, mark) {
-            (Some(c), "promise" | "not") => {
+        let task = owed.iter().find(|t| t["evidence"]["hash"] == hash);
+        match (candidate, task, mark, why) {
+            (Some(c), _, "promise" | "not", _) => {
                 marks[hash] =
                     json!({"mark": mark, "sentence": c["sentence"], "source": c["source"]});
+                if let Some(why) = why {
+                    marks[hash]["why"] = why.into();
+                }
             }
-            (None, _) => faults.push(fault(
-                format!("`{hash}` is no candidate's hash"),
-                "mark a hash `truefit promise` lists: the sentence may have changed since",
+            (_, Some(t), "not", Some(why)) if !why.trim().is_empty() => {
+                marks[hash] = json!({"mark": mark, "why": why, "kind": t["kind"], "summary": t["summary"]});
+            }
+            (_, Some(t), _, _) => faults.push(fault(
+                format!("`{hash}` is a {} task, marked only `not` with its `--why`", t["kind"].as_str().unwrap_or("")),
+                "do the task's steps (register the promise), or mark it `not` with `--why \"<reason>\"`",
+            )),
+            (None, None, _, _) => faults.push(fault(
+                format!("`{hash}` is no candidate's hash, nor a task's"),
+                "mark a hash `truefit promise` or `truefit next` lists: the sentence or the history may have changed since",
             )),
             _ => faults.push(fault(
                 format!("`{mark}` is no mark"),

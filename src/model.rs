@@ -417,7 +417,7 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
             .collect()
     };
     let record = json!({
-        "commit": git(root, &["rev-parse", "HEAD"]).map(|c| c.trim().to_string()),
+        "commit": contract::git(root, &["rev-parse", "HEAD"]).map(|c| c.trim().to_string()),
         "date": contract::today(),
         "inputs": inputs(root, m),
         "result": r["result"],
@@ -850,17 +850,6 @@ fn checked(config: &str, sections: &[&str]) -> Vec<String> {
 }
 
 /// A git command's output in `root`, or None where it fails.
-fn git(root: &Path, args: &[&str]) -> Option<String> {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-}
-
 /// The CONSTANT sections of a TLC config, which a trace's check keeps.
 fn constants(config: &str) -> String {
     let mut keep = false;
@@ -881,10 +870,16 @@ fn constants(config: &str) -> String {
     out.join("\n")
 }
 
+/// The files model `name`'s actions cover.
+pub fn files<'a>(models: &'a [Model], name: &'a str) -> impl Iterator<Item = &'a str> {
+    let model = models.iter().filter(move |m| m.name == name);
+    model.flat_map(|m| m.covers.iter().map(|c| c.file.as_str()))
+}
+
 /// The `stale-model` tasks: a model whose covered files changed since the
 /// commit its coverage record names; and notes on what was not compared.
 pub fn tasks(root: &Path, models: &[Model]) -> (Vec<Value>, Vec<String>) {
-    let git = |args: &[&str]| git(root, args);
+    let git = |args: &[&str]| contract::git(root, args);
     if models.is_empty() {
         return (vec![], vec![]);
     }
