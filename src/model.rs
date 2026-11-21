@@ -219,7 +219,7 @@ fn tlc() -> Result<(PathBuf, bool), Vec<Value>> {
     Ok((jar, true))
 }
 
-fn sha256(path: &Path) -> Option<String> {
+pub fn sha256(path: &Path) -> Option<String> {
     Some(digest(&std::fs::read(path).ok()?))
 }
 

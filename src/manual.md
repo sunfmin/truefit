@@ -42,6 +42,10 @@ Each declared stand-in and its real program answer the same cases alike.
 - A real program truefit cannot run here (not found, or its `ready` command
   fails: no login, no account, no device) is `not run`, with what it `needs`.
   It is never a pass: run it where it can run.
+- A case whose own `ready` fails here (a fault the real program cannot be made
+  to produce on this host: an unreachable network) is `not run`, with its
+  `needs`; the other cases still run, but the real run is `not run` and
+  records nothing.
 
 Run from the directory holding `truefit.toml`; command paths with a `/` in
 them are relative to it, others are looked up on PATH.
@@ -62,6 +66,9 @@ ready = ["git", "config", "user.name"] # must succeed, or the real run is not ru
 version = ["git", "--version"]        # its first line is kept as the version
 compare = ["exit", "stdout", "stderr", "files"] # default: exit and stdout
 normalise = [{ pattern = '\d{4}-\d\d-\d\d', replace = "<date>" }]
+faults = ["push-rejected", "unreachable"] # the failures it answers, each held by a case
+fault_env = "FAKE_GIT_FAULT"          # tells the stand-in which (default TRUEFIT_FAULT)
+# no_faults = { why = "...", sha256 = "..." } # instead: no call of it can fail usefully
 
 [[standin.case]]
 name = "status-clean"                 # each case: a command line, stdin, environment
@@ -70,6 +77,13 @@ args = ["status", "--porcelain"]      # appended to `run` and to `real`
 stdin = ""
 env = { GIT_PAGER = "cat" }
 files = ["out.txt"]                   # files it writes there, compared under `files`
+
+[[standin.case]]
+name = "push-unreachable"
+fault = "unreachable"                 # the stand-in runs with FAKE_GIT_FAULT=unreachable
+args = ["push", "origin", "main"]     # the real side, never told, fails for real
+ready = ["sh", "-c", "! curl -sm2 https://example.com"] # else this case is not run,
+needs = "a host with no network"      #   with what it needs
 ```
 
 Both sides run each case in their own fresh directory. That directory's path
@@ -77,6 +91,12 @@ becomes `<dir>` in their answers; then each `normalise` rule (a regex and its
 replacement) is applied to stdout, stderr and the files, on both sides alike.
 Normalise only what differs from run to run (dates, temporary paths, ids,
 versions), never what the system decides on.
+
+A stand-in's `faults` are the failures it can answer. Each is a name its
+`fault_env` variable selects (how the stand-in reads it is the repo's own);
+the stand-in side of a case with `fault` runs with it set, the real side
+without, so the case passes only when the stand-in's failure answers as the
+real program's does. Each declared fault needs at least one such case.
 
 ### What a contract covers
 
@@ -88,8 +108,23 @@ call site and each answer it tells apart. Compare the parts it reads, and no
 more. A behaviour the system relies on that no case holds is untested
 against reality; when one breaks in production, add the case first.
 
+Faults are found the same way: at each call site, read the error path. A
+stand-in that can only succeed makes a test of every failure impossible to
+write, and none is worse than a failure after a step that took effect
+elsewhere (a token issued, a file written, a message sent). sesame#24:
+its refresh drops a token the provider just issued when the store's write
+fails, so a rotating provider's login is lost; its stand-in of `op`
+answered no failed write, its contract held only the answers sesame tells
+apart (and it treats every failed write alike), and line coverage counted
+the save covered on success. For each call whose error the system handles,
+or drops, after an earlier step took effect: declare the fault, a case
+whose real side fails so, and the system's test that runs it. A stand-in
+none of whose calls can fail usefully gets `no_faults`, with why and the
+stand-in's SHA-256: it is not asked again until the stand-in changes.
+
 `testdata/plutil/` is a worked example: a stand-in of macOS `plutil` that
-agrees, a wrong one that differs, and one no contract declares.
+agrees (with one fault, a write plutil refuses), a wrong one that differs
+and declares no fault, and one no contract declares.
 
 ## `truefit sim`
 
@@ -388,8 +423,10 @@ A check is reached, or the promise is `unreached`:
   the promise's name; and it is backed (its last `truefit model` passed
   with an accept trace and a reject trace that breaks that invariant), or
   the promise is `unbacked`.
-- `test`, `contract <stand-in>`: declared; truefit cannot see a test reach
-  it, and a contract's freshness is `truefit contract`'s.
+- `contract <stand-in>`: the stand-in declares a fault (or `no_faults` for
+  it as it is now): through one that can only succeed, no test reaches the
+  failures a promise is about. Its freshness is `truefit contract`'s.
+- `test`: declared; truefit cannot see a test reach it.
 
 Names are compared without case and punctuation: `applied-once` is the
 model's `AppliedOnce`.
@@ -434,6 +471,10 @@ compares models' coverage with git, never running TLC.
 - `stale-contract`: a declared stand-in whose last passing real run
   (`.truefit/<name>.json`) is missing, older than `fresh_days`, or against
   another version than its `version` command answers here now.
+- `standin-without-faults`: a declared stand-in with no `faults`, and no
+  `no_faults` whose `sha256` is the stand-in's now (`evidence` has it): read
+  the system's code at each call to the real program, and declare each fault
+  it handles after a step took effect, with its case and the system's test.
 - `differing-case`: the last real run found cases whose answers differ
   (`.truefit/<name>.differ.json`, with both answers): make the stand-in
   answer as the real program does.

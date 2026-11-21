@@ -174,6 +174,13 @@ fn status<'p>(root: &Path, config: &Config, p: &'p Promise) -> (Value, Vec<(&'p 
             .filter_map(|&(rung, arg)| match rung {
                 "sim" => crate::sim::unreached(root, &p.name, config.contract.fresh_days),
                 "model" => crate::model::unreached(root, &config.model, arg, &p.name),
+                // A failure the promise is about cannot be reached through a stand-in that only succeeds.
+                "contract" => config
+                    .standin
+                    .iter()
+                    .find(|s| s.name == arg)
+                    .and_then(|s| contract::without_faults(root, s))
+                    .map(|(why, _)| format!("`contract {arg}`: stand-in {arg}: {why}")),
                 _ => None,
             })
             .collect();
