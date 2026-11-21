@@ -94,7 +94,12 @@ fn a_true_stand_in_agrees_with_plutil_and_its_real_run_is_recorded() {
         serde_json::from_str(&std::fs::read_to_string(dir.join(".truefit/plutil.json")).unwrap())
             .unwrap();
     assert_eq!(record, s["real_run"]);
-    assert_eq!(record["date"].as_str().unwrap().len(), 10);
+    let utc = Command::new("date")
+        .args(["-u", "+%F"])
+        .output()
+        .unwrap()
+        .stdout;
+    assert_eq!(record["date"], String::from_utf8(utc).unwrap().trim());
     assert!(record["version"].is_string());
     let (_, plain) = truefit_in(&dir, &["contract"]);
     assert_eq!(plain["standins"][0]["real_run"], record);
@@ -115,7 +120,12 @@ fn a_wrong_stand_in_differs_and_both_answers_are_printed() {
     assert_eq!(lint["real"]["stderr"], "bad.plist: (<why>)\n");
     assert_eq!(lint["real"]["exit"], 1);
     assert!(!dir.join(".truefit/plutil-wrong.json").exists());
-    assert!(out["next"].as_str().unwrap().contains("plutil-wrong"));
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .contains("answer as `plutil` does")
+    );
 }
 
 #[test]
@@ -126,6 +136,12 @@ fn a_real_program_missing_from_path_is_not_run() {
     assert_eq!(s["result"], "not run");
     assert_eq!(s["needs"], "truefit-no-such-program 1.x on PATH, logged in");
     assert!(s.get("cases").is_none());
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .starts_with("give `truefit-no-such-program` what it needs")
+    );
 }
 
 #[test]
@@ -162,6 +178,12 @@ name = "c"
     let (code, out) = truefit_in(&dir, &["contract"]);
     assert_eq!(code, Some(1), "{out:#}");
     assert_eq!(out["standins"][0]["cases"][0]["result"], "cannot run");
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .contains("run each of its cases")
+    );
     let (code, out) = truefit_in(&dir, &["contract", "--real"]);
     assert_eq!(code, Some(1), "{out:#}");
     assert_eq!(out["standins"][0]["cases"][0]["result"], "cannot run");
@@ -266,5 +288,19 @@ fn a_real_run_whose_record_cannot_be_written_fails() {
             .as_str()
             .unwrap()
             .contains(".truefit/e.json")
+    );
+}
+
+#[test]
+fn by_default_a_contract_compares_exit_and_stdout() {
+    let dir = config(
+        "default-compare",
+        "[[standin]]\nname = \"e\"\nrun = [\"/bin/echo\", \"a\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\nargs = [\"b\"]\n",
+    );
+    let (code, out) = truefit_in(&dir, &["contract", "--real"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(
+        out["standins"][0]["cases"][0]["differ"],
+        serde_json::json!(["stdout"])
     );
 }
