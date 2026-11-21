@@ -121,7 +121,7 @@ pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
     let promises: Vec<Value> = config
         .promise
         .iter()
-        .map(|p| status(root, &config, p))
+        .map(|p| status(root, &config, p).0)
         .collect();
     let (unmarked, unregistered) = candidates(root, &config, &found);
     let failing = |s: &str| promises.iter().filter(|p| p["status"] == s).count();
@@ -152,11 +152,13 @@ pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
 
 /// One promise's status: `kept`, `unchecked`, `unreached`, `unbacked` (a
 /// model reaches it, but its last check lacks a passing TLC run, an accept
-/// trace or a reject trace that breaks it) or `checked`.
-fn status(root: &Path, config: &Config, p: &Promise) -> Value {
+/// trace or a reject trace that breaks it) or `checked`; and, when
+/// `unbacked`, each model that does not back it, with why.
+fn status<'p>(root: &Path, config: &Config, p: &'p Promise) -> (Value, Vec<(&'p str, String)>) {
     let checks = p.checks();
     let has = |rung: &str| checks.iter().any(|(r, _)| *r == rung);
     let mut report = json!({"name": p.name, "says": p.says, "source": p.source, "check": p.check});
+    let mut models = Vec::new();
     let (status, why) = if let Some(kept) = &p.kept {
         ("kept", kept.clone())
     } else if p.check.is_empty() {
@@ -175,14 +177,24 @@ fn status(root: &Path, config: &Config, p: &Promise) -> Value {
                 _ => None,
             })
             .collect();
-        let unbacked: Vec<String> = checks
+        let unbacked: Vec<(&str, String)> = checks
             .iter()
             .filter(|(rung, _)| *rung == "model")
-            .filter_map(|&(_, arg)| crate::model::unbacked(root, &config.model, arg, &p.name))
+            .filter_map(|&(_, m)| {
+                Some((m, crate::model::unbacked(root, &config.model, m, &p.name)?))
+            })
             .collect();
         match (unreached.is_empty(), unbacked.is_empty()) {
             (false, _) => ("unreached", unreached.join("; ")),
-            (true, false) => ("unbacked", unbacked.join("; ")),
+            (true, false) => {
+                let why = unbacked
+                    .iter()
+                    .map(|(_, w)| w.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                models = unbacked;
+                ("unbacked", why)
+            }
             (true, true) => ("checked", String::new()),
         }
     };
@@ -190,7 +202,7 @@ fn status(root: &Path, config: &Config, p: &Promise) -> Value {
     if !why.is_empty() {
         report["why"] = why.into();
     }
-    report
+    (report, models)
 }
 
 /// Whether two names are one invariant's: alike but for case and punctuation,
@@ -386,21 +398,16 @@ pub fn tasks(root: &Path, config: &Config) -> Vec<Value> {
     // Each unbacked model, with each promise it does not back and why.
     let mut unbacked: std::collections::BTreeMap<&str, Vec<Value>> = Default::default();
     for p in &config.promise {
-        let s = status(root, config, p);
+        let (s, models) = status(root, config, p);
+        for (m, why) in models {
+            unbacked
+                .entry(m)
+                .or_default()
+                .push(json!({"promise": p.name, "why": why}));
+        }
         let kind = match s["status"].as_str() {
             Some("unchecked") => "unchecked-promise",
             Some("unreached") => "unreached-promise",
-            Some("unbacked") => {
-                for (_, m) in p.checks().into_iter().filter(|(r, _)| *r == "model") {
-                    if let Some(why) = crate::model::unbacked(root, &config.model, m, &p.name) {
-                        unbacked
-                            .entry(m)
-                            .or_default()
-                            .push(json!({"promise": p.name, "why": why}));
-                    }
-                }
-                continue;
-            }
             _ => continue,
         };
         let steps = if kind == "unchecked-promise" {

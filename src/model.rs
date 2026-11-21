@@ -348,16 +348,11 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
     );
     let (r, accepted, rejected) = std::thread::scope(|s| {
         let tlc = s.spawn(|| check(root, m, jar));
-        let runs = |files: Vec<String>, against| -> Vec<_> {
-            files
-                .into_iter()
-                .map(|f| s.spawn(move || check_trace(root, m, jar, &f, against)))
-                .collect()
-        };
-        let a = runs(accept, Against::Next);
-        let b: Vec<_> = runs(reject.clone(), Against::Next)
-            .into_iter()
-            .zip(runs(reject, Against::Invariants))
+        let run = |f, against| spawn_trace(s, root, m, jar, f, against);
+        let a: Vec<_> = accept.iter().map(|f| run(f, Against::Next)).collect();
+        let b: Vec<_> = reject
+            .iter()
+            .map(|f| (run(f, Against::Next), run(f, Against::Invariants)))
             .collect();
         let join = |h: std::thread::ScopedJoinHandle<'_, _>| h.join().unwrap();
         let a: Result<Vec<Value>, Vec<Value>> = a.into_iter().map(join).collect();
@@ -430,6 +425,18 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
     });
     contract::save(root, &record_file(&m.name), &record)?;
     Ok(r)
+}
+
+/// A trace's check, on a thread of `s`.
+fn spawn_trace<'s, 'e>(
+    s: &'s std::thread::Scope<'s, 'e>,
+    root: &'e Path,
+    m: &'e Model,
+    jar: &'e Path,
+    file: &'e str,
+    against: Against,
+) -> std::thread::ScopedJoinHandle<'s, Result<Value, Vec<Value>>> {
+    s.spawn(move || check_trace(root, m, jar, file, against))
 }
 
 /// ` at step N` when a trace report names the step it stopped at.
@@ -753,11 +760,9 @@ fn variables(spec: &str) -> Vec<String> {
         regex_lite::Regex::new(r"\bVARIABLES?\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)").unwrap();
     declared
         .captures_iter(&text)
-        .flat_map(|c| {
-            c[1].split(',')
-                .map(|v| v.trim().to_string())
-                .collect::<Vec<_>>()
-        })
+        .filter_map(|c| c.get(1))
+        .flat_map(|names| names.as_str().split(','))
+        .map(|v| v.trim().to_string())
         .collect()
 }
 
