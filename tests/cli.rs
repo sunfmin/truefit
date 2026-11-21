@@ -400,6 +400,18 @@ args = ["hi"]
     let (code, _) = truefit_in(&dir, &["contract", "--real"]);
     assert_eq!(code, Some(0));
     assert!(!dir.join(".truefit/echo.differ.json").exists());
+    // Passed exactly the default fresh_days (30) ago: still fresh.
+    let month = Command::new("date")
+        .args(["-u", "-v-30d", "+%F"])
+        .output()
+        .unwrap()
+        .stdout;
+    let month = String::from_utf8(month).unwrap();
+    std::fs::write(
+        dir.join(".truefit/echo.json"),
+        format!(r#"{{"date": "{}", "version": null}}"#, month.trim()),
+    )
+    .unwrap();
     let (code, out) = truefit_in(&dir, &["next", "--all"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["tasks"], serde_json::json!([]), "{out:#}");

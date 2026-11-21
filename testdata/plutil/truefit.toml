@@ -2,7 +2,7 @@
 # a third without a contract.
 
 [contract]
-standins = ["plutil-*"]  # where the stand-ins live: each one here needs a [[standin]]
+standins = ["./plutil-*"] # where the stand-ins live: each one here needs a [[standin]]
 fresh_days = 30          # a real run older than this is stale (the default)
 
 [[standin]]
