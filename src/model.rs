@@ -548,9 +548,32 @@ fn tla_string(s: &str) -> String {
     format!("\"{escaped}\"")
 }
 
+/// The words that open a section of a TLC config.
+const KEYWORDS: &str = "CONSTANT CONSTANTS INIT NEXT SPECIFICATION INVARIANT INVARIANTS PROPERTY PROPERTIES SYMMETRY VIEW CONSTRAINT CONSTRAINTS ACTION_CONSTRAINT ACTION_CONSTRAINTS CHECK_DEADLOCK ALIAS POSTCONDITION TYPE TYPE_CONSTRAINT";
+
+/// Why model `model`'s config checks no invariant (or property) named `name`, or None: it does.
+pub fn unreached(root: &Path, models: &[Model], model: &str, name: &str) -> Option<String> {
+    let m = models.iter().find(|m| m.name == model)?;
+    let config = std::fs::read_to_string(root.join(&m.config)).unwrap_or_default();
+    let mut checking = false;
+    for line in config.lines() {
+        let line = line.split("\\*").next().unwrap_or("");
+        for word in line.split_whitespace() {
+            if KEYWORDS.split(' ').any(|k| k == word) {
+                checking = ["INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES"].contains(&word);
+            } else if checking && crate::promise::same_name(word, name) {
+                return None;
+            }
+        }
+    }
+    Some(format!(
+        "model {model}: {} checks no invariant named `{name}`",
+        m.config
+    ))
+}
+
 /// The CONSTANT sections of a TLC config, which a trace's check keeps.
 fn constants(config: &str) -> String {
-    let keywords = "CONSTANT CONSTANTS INIT NEXT SPECIFICATION INVARIANT INVARIANTS PROPERTY PROPERTIES SYMMETRY VIEW CONSTRAINT CONSTRAINTS ACTION_CONSTRAINT ACTION_CONSTRAINTS CHECK_DEADLOCK ALIAS POSTCONDITION TYPE TYPE_CONSTRAINT";
     let mut keep = false;
     let mut out = Vec::new();
     for line in config.lines() {
@@ -558,7 +581,7 @@ fn constants(config: &str) -> String {
         if let Some(word) = line
             .split_whitespace()
             .next()
-            .filter(|w| keywords.split(' ').any(|k| k == *w))
+            .filter(|w| KEYWORDS.split(' ').any(|k| k == *w))
         {
             keep = word.starts_with("CONSTANT");
         }

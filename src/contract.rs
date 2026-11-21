@@ -22,6 +22,10 @@ pub struct Config {
     pub sim: Option<crate::sim::Sim>,
     #[serde(default)]
     pub model: Vec<crate::model::Model>,
+    #[serde(default)]
+    pub promises: crate::promise::Sources,
+    #[serde(default)]
+    pub promise: Vec<crate::promise::Promise>,
 }
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
@@ -187,6 +191,7 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
         )]
     })?;
     let mut faults = crate::model::faults(&config.model);
+    faults.extend(crate::promise::faults(&config));
     if config.sim.as_ref().is_some_and(|s| s.run.is_empty()) {
         faults.push(fault(
             "[sim] run is empty",

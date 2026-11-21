@@ -4,6 +4,7 @@
 mod contract;
 mod model;
 mod next;
+mod promise;
 mod sim;
 
 use serde_json::json;
@@ -26,6 +27,21 @@ fn main() -> ExitCode {
     }
     if let ["model", rest @ ..] = args.as_slice() {
         return model(rest);
+    }
+    if let ["promise", rest @ ..] = args.as_slice() {
+        let marks = match rest {
+            [] => Ok(&[][..]),
+            ["--mark", pairs @ ..] if !pairs.is_empty() && pairs.len() % 2 == 0 => Ok(pairs),
+            _ => Err(vec![contract::fault(
+                format!(
+                    "`truefit promise {}` is not a promise command",
+                    rest.join(" ")
+                ),
+                "run `truefit promise` or `truefit promise --mark <hash> <promise|not> [<hash> <mark>]...`",
+            )]),
+        };
+        let root = std::env::current_dir().unwrap_or_default();
+        return print(marks.and_then(|m| promise::run(&root, m)));
     }
     if let ["next", rest @ ..] = args.as_slice() {
         let all = match rest {

@@ -117,7 +117,11 @@ reruns exactly.
 
 It exits 0 when every seed passed, 1 when one fails, is nondeterministic or
 broken. Each report has the seed's `result` (`passes`, `fails`,
-`nondeterministic`, `broken`), its `verdict`, its `steps` and `rerun`.
+`nondeterministic`, `broken`), its `verdict`, its `steps` and `rerun`. A
+plain `truefit sim` (kept seeds and new) also prints `reached`, each
+invariant its steps named in `checked`, with how many seeds did and the
+first, and writes it, with the date and the seeds run, to
+`.truefit/sim.reached.json` (commit it): what `truefit promise` reads.
 
 ### `[sim]` in `truefit.toml`
 
@@ -146,8 +150,11 @@ running its own code. From the seed alone it:
   code as the real world would deliver it;
 - checks the invariants after every step, each with one home the system's
   own checks (and its model) use too, not a copy for the simulation;
-- prints one JSON line per step, `{"step": 3, "event": "...", "state": {...}}`
-  with the state the invariants read, and a final verdict line:
+- prints one JSON line per step, `{"step": 3, "event": "...", "state": {...},
+  "checked": ["applied-once"]}` with the state the invariants read and the
+  invariants, by name, it checked in a state they are about (not where one
+  holds vacuously: applied-once after a message's first delivery), and a
+  final verdict line:
   `{"verdict": "pass"}`, or `{"verdict": "fail", "invariant": "<name>",
   "step": 3}`. A panic of the system's code is caught and printed as a
   failed invariant, so the run still ends with its verdict.
@@ -233,6 +240,17 @@ every order of events must keep a promise (exactly once, no lost update,
 one leader, a queue that drains). Not what one function computes: a test
 or a verifier on the code does that better.
 
+How to tell a promise that needs a model (and a simulation): it holds
+across steps the system does not order itself. Ask of it: can two of the
+system's processes, workers or sessions act on the same thing at once? Can
+it crash or restart between two of the steps, and start again? Does it
+retry, hold a lease or a lock that expires, or wait on a queue? Can a
+message, an event or a command it sends be lost, delayed, reordered or
+arrive twice? One yes is enough. A promise only one function's answer
+keeps (a parse, a format, a computed limit) is a test's. The registry
+(`truefit promise`) holds each promise to this: one of the concurrent kind
+needs both `sim` and `model`.
+
 - One action for each step the code takes as one indivisible step, named
   as the code names it; a step the code can be interrupted in the middle
   of is two actions. Each action is in `covers`, with the file and
@@ -280,6 +298,75 @@ applies it again when it is redelivered, `disallowed` at step 3:
 ./sim 3 > bad.jsonl && truefit model --trace bad.jsonl  # disallowed, step 3
 ```
 
+## `truefit promise`
+
+Each promise the system makes, tied to the check that keeps it. A system's
+SPEC, README and ADRs make promises ("never", "exactly once", "at most
+one", "within N seconds"); one no check keeps can break unseen.
+
+- `truefit promise`: reports each `[[promise]]` by its `status`: `checked`
+  (each named check reaches it), `unreached` (a named check never reached
+  it: `why` names which), `unchecked` (no check, or too cheap a one without
+  its reason), or `kept` (not checked, and why). And `candidates`: the
+  sentences of `[promises] sources` with a promise word (never, always, at
+  most, exactly once, only, within, every), `found` in all, those
+  `unmarked`, and those marked a promise that no `[[promise]]` registers
+  (`unregistered`); each with its `source` (file:line), `sentence`, `hash`
+  and the `rung` its words point to (`test`, or `sim and model`). A
+  candidate that holds a registered promise's `says` is that promise.
+- `truefit promise --mark <hash> <promise|not> [<hash> <mark>]...`: marks
+  candidates, kept in `.truefit/promises.json` by the sentence's hash, so
+  one marked is not asked again; a sentence that changes has a new hash and
+  is asked again. Commit it.
+
+It exits 0 when every promise is checked or kept and every candidate is
+marked and, if a promise, registered; 1 when not. It reads, never runs:
+the last `truefit sim`, the models' configs.
+
+### The ladder
+
+A promise's checks, from the cheapest: `test` (a test of the system's
+keeps it), `contract <stand-in>` (it rests on a real program's answers),
+`sim` (the simulation checks it by name), `model <name>` (the model checks
+it). Take the cheapest that can break when the promise does. A promise
+about what runs at once or in an order the system does not choose (what
+to model, above: its words say so, crash, retry, lease, queue, lost,
+twice..., or `concurrent = true`) needs both `sim` and `model`; a cheaper
+check on one, or `kept`, needs its reason (`why`, the `kept` reason).
+
+A check is reached, or the promise is `unreached`:
+
+- `sim`: a step of the last `truefit sim` (`.truefit/sim.reached.json`, no
+  older than `[contract] fresh_days`) named the promise in its `checked`.
+- `model <name>`: that model's config checks an invariant (or property) of
+  the promise's name.
+- `test`, `contract <stand-in>`: declared; truefit cannot see a test reach
+  it, and a contract's freshness is `truefit contract`'s.
+
+Names are compared without case and punctuation: `applied-once` is the
+model's `AppliedOnce`.
+
+### `[[promise]]` in `truefit.toml`
+
+```toml
+[promises]
+sources = ["SPEC.md", "README.md", "docs/adr/*.md"] # the default
+
+[[promise]]
+name = "applied-once"     # the invariant's one name: code, simulation, model
+says = "A message is never applied twice." # the sentence, quoted
+source = "SPEC.md:12"     # where the system makes it
+check = ["sim", "model queue"] # any of test, contract <stand-in>, sim, model <name>
+why = ""                  # the reason for a cheaper check on a concurrent one
+# kept = "<why it is not checked>", in place of check
+# concurrent = true: of the concurrent kind, though its words do not say so
+```
+
+`testdata/sim/` is a worked example: `SPEC.md`'s four promises, one checked
+and reached (`applied-once`, after `truefit sim`), one registered to `sim`
+and `model queue` that neither reaches (`no-lost-message`), one unchecked,
+one kept with its reason; and one candidate to mark `not`.
+
 ## `truefit next [--all]`
 
 What to do about the repo's ties: the next task (`task`), or with `--all`
@@ -306,6 +393,11 @@ compares models' coverage with git, never running TLC.
   first line they differ at: make the simulation choose all from the seed.
 - `failing-seed`: a kept seed that failed when last run: fix the bug it
   reaches.
+- `unregistered-promise`: candidates not yet marked, and those marked a
+  promise that no `[[promise]]` registers (`evidence`: `unmarked`,
+  `unregistered`): mark each, register each promise.
+- `unchecked-promise`, `unreached-promise`: a promise `truefit promise`
+  reports so, with its report as `evidence`.
 - `stale-model`: a model whose covered files (`covers`) changed since the
   `commit` its coverage record names, or whose `commit` this repo's history
   lacks: bring the model in line with the code, check it, and move `commit`
