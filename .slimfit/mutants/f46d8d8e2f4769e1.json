@@ -1,0 +1,39 @@
+{
+  "tree": "380d246a45a9fbaf96860bbbae7cc21c7fae09cd+d1fba762150c532c",
+  "picker": "codex:01a1fc56-641a-7791-88c8-21da4b67d1e0:default",
+  "author": "claude-code:b7ea0bc1-fe65-539d-8ee8-3b0f997d84c7:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/model.rs:68:32: replace || with && in faults",
+        "why": "The uncovered fixture omits both fields, so the tests miss models that supply only a commit or only covers.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:48:5: replace default_limit -> u64 with 1",
+        "why": "Models that reach TLC in the tests set an explicit limit, leaving the documented 300-second default unchecked.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:329:32: replace || with && in check",
+        "why": "The model timeout test asserts the result and advice while leaving the diagnostic output unchecked.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:365:39: replace match guard first with true in read",
+        "why": "The fixtures omit wrapped TLC values whose continuation contains ` = ` and could be parsed as a new variable.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/main.rs:111:36: replace match guard !name.starts_with('-') with true in model",
+        "why": "The invalid-option test covers the single-argument form, so a flag-shaped name before `--trace` goes unchecked.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}
