@@ -28,3 +28,11 @@ fn an_unknown_command_exits_2_and_names_the_manual() {
             .contains("truefit --help")
     );
 }
+
+#[test]
+fn version_names_the_build() {
+    let out = truefit(&["--version"]);
+    assert!(out.status.success());
+    let said = String::from_utf8(out.stdout).unwrap();
+    assert!(said.starts_with("truefit 0."), "{said}");
+}

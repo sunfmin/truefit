@@ -3,6 +3,10 @@
 
 use std::process::ExitCode;
 
+// The version build.rs stamps; its tests run here.
+#[cfg(test)]
+mod version;
+
 const MANUAL: &str = include_str!("manual.md");
 
 fn main() -> ExitCode {
@@ -13,7 +17,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("--version" | "-V") => {
-            println!("truefit {}", env!("CARGO_PKG_VERSION"));
+            println!("truefit {}", env!("TRUEFIT_VERSION"));
             ExitCode::SUCCESS
         }
         Some(other) => {
