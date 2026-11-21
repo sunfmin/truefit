@@ -434,6 +434,16 @@ fn next_without_declared_stand_in_places_says_so() {
     );
 }
 
+/// `truefit next`'s counts but the sim sample's promise tasks.
+fn but_promises(next: &Value) -> Value {
+    let mut counts = next["counts"].clone();
+    counts
+        .as_object_mut()
+        .unwrap()
+        .retain(|kind, _| !kind.ends_with("-promise"));
+    counts
+}
+
 fn kept_seeds(dir: &Path) -> Vec<String> {
     let mut seeds: Vec<String> = std::fs::read_dir(dir.join(".truefit/seeds"))
         .into_iter()
@@ -526,7 +536,7 @@ fn sim_finds_the_sample_bug_keeps_its_seed_and_reruns_it_step_for_step() {
         "{out:#}"
     );
     let (_, next) = truefit_in(&dir, &["next", "--all"]);
-    assert_eq!(next["counts"], serde_json::json!({}), "{next:#}");
+    assert_eq!(but_promises(&next), serde_json::json!({}), "{next:#}");
     let (code, out) = truefit_in(&dir, &["sim", "--seed", seed]);
     assert_eq!(code, Some(0), "{out:#}");
     assert!(out["seed"].get("changed").is_none());
@@ -575,7 +585,7 @@ fn sim_catches_a_nondeterministic_simulation_at_the_first_step_that_differs() {
     );
     let (_, next) = truefit_in(&dir, &["next", "--all"]);
     assert_eq!(
-        next["counts"],
+        but_promises(&next),
         serde_json::json!({"nondeterministic-sim": 1}),
         "{next:#}"
     );
@@ -605,7 +615,7 @@ fn sim_catches_a_nondeterministic_simulation_at_the_first_step_that_differs() {
     );
     let (_, next) = truefit_in(&dir, &["next", "--all"]);
     assert_eq!(
-        next["counts"],
+        but_promises(&next),
         serde_json::json!({"failing-seed": found.len()}),
         "{next:#}"
     );
@@ -998,7 +1008,7 @@ fn next_gives_a_stale_model_once_its_covered_code_changes_after_its_commit() {
     std::fs::write(dir.join("truefit.toml"), &toml).unwrap();
     git(&["commit", "-qam", "confirm the model at one"]);
     let (_, out) = truefit_in(&dir, &["next", "--all"]);
-    assert_eq!(out["tasks"], serde_json::json!([]), "{out:#}");
+    assert_eq!(but_promises(&out), serde_json::json!({}), "{out:#}");
     let awk = std::fs::read_to_string(dir.join("queue.awk")).unwrap();
     std::fs::write(dir.join("queue.awk"), awk + "# a change\n").unwrap();
     let (_, out) = truefit_in(&dir, &["next"]);
@@ -1119,4 +1129,218 @@ fn model_faults_exit_2() {
         assert!(fault.contains(says), "{args:?}: {out:#}");
         assert!(out["error"][0]["fix"].is_string());
     }
+}
+
+/// Each sample promise's status, by name.
+fn statuses(out: &Value) -> Vec<(&str, &str)> {
+    let promises = out["promises"].as_array().unwrap();
+    promises
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap(), p["status"].as_str().unwrap()))
+        .collect()
+}
+
+#[test]
+fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
+    let dir = sample("sim", "promise");
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert!(
+        out["promises"][0]["why"]
+            .as_str()
+            .unwrap()
+            .contains("no `truefit sim` run is recorded"),
+        "{out:#}"
+    );
+    // Seeds that crash redeliver a message: their steps check applied-once.
+    let (_, sim) = truefit_in(&dir, &["sim", "--seeds", "20"]);
+    assert!(
+        sim["reached"]["applied-once"]["seeds"].as_u64().unwrap() > 0,
+        "{sim:#}"
+    );
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1));
+    let want = [
+        ("applied-once", "checked"),
+        ("no-lost-message", "unreached"),
+        ("head-in-range", "unchecked"),
+        ("seeded", "kept"),
+    ];
+    assert_eq!(statuses(&out), want, "{out:#}");
+    let why = out["promises"][1]["why"].as_str().unwrap();
+    assert!(
+        why.contains("no step of the last `truefit sim` (20 seeds"),
+        "{why}"
+    );
+    assert!(
+        why.contains("Queue.cfg checks no invariant named `no-lost-message`"),
+        "{why}"
+    );
+
+    // The one candidate no promise registers is asked, then not again once marked.
+    let unmarked = out["candidates"]["unmarked"].as_array().unwrap();
+    assert_eq!(out["candidates"]["found"], 5);
+    assert_eq!(unmarked.len(), 1, "{out:#}");
+    assert_eq!(unmarked[0]["source"], "SPEC.md:11");
+    let hash = unmarked[0]["hash"].as_str().unwrap().to_string();
+    let (_, next) = truefit_in(&dir, &["next", "--all"]);
+    let kinds = serde_json::json!({"unregistered-promise": 1, "unreached-promise": 1, "unchecked-promise": 1});
+    let mut counts = next["counts"].clone();
+    counts.as_object_mut().unwrap().remove("failing-seed");
+    assert_eq!(counts, kinds, "{next:#}");
+    let tasks = next["tasks"].as_array().unwrap();
+    let task = tasks
+        .iter()
+        .find(|t| t["kind"] == "unregistered-promise")
+        .unwrap();
+    assert_eq!(task["accept"], "truefit promise");
+    assert_eq!(task["evidence"]["unmarked"][0]["hash"], hash.as_str());
+    let (code, out) = truefit_in(&dir, &["promise", "--mark", &hash, "maybe"]);
+    assert_eq!(code, Some(2), "{out:#}");
+    let (code, out) = truefit_in(&dir, &["promise", "--mark", "0000", "not"]);
+    assert_eq!(code, Some(2), "{out:#}");
+    assert!(
+        out["error"][0]["fault"]
+            .as_str()
+            .unwrap()
+            .contains("no candidate's hash")
+    );
+    let (code, _) = truefit_in(&dir, &["promise", "--mark", &hash]);
+    assert_eq!(code, Some(2));
+    let (_, out) = truefit_in(&dir, &["promise", "--mark", &hash, "not"]);
+    assert_eq!(
+        out["candidates"]["unmarked"],
+        serde_json::json!([]),
+        "{out:#}"
+    );
+    let (_, next) = truefit_in(&dir, &["next", "--all"]);
+    assert!(
+        next["counts"].get("unregistered-promise").is_none(),
+        "{next:#}"
+    );
+
+    // A sentence that changed is asked again; one marked a promise waits to be registered.
+    let spec = std::fs::read_to_string(dir.join("SPEC.md")).unwrap();
+    std::fs::write(dir.join("SPEC.md"), spec.replace("in awk", "in awk alone")).unwrap();
+    let (_, out) = truefit_in(&dir, &["promise"]);
+    let again = out["candidates"]["unmarked"][0]["hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(again, hash);
+    let (_, out) = truefit_in(&dir, &["promise", "--mark", &again, "promise"]);
+    assert_eq!(
+        out["candidates"]["unregistered"][0]["hash"],
+        again.as_str(),
+        "{out:#}"
+    );
+
+    // A sim run fresh_days old is fresh; one older reaches nothing.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    std::fs::write(
+        dir.join("truefit.toml"),
+        format!("[contract]\nfresh_days = 0\n{toml}"),
+    )
+    .unwrap();
+    let (_, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(out["promises"][0]["status"], "checked", "{out:#}");
+    let reached = dir.join(".truefit/sim.reached.json");
+    let old = std::fs::read_to_string(&reached).unwrap();
+    let date = serde_json::from_str::<Value>(&old).unwrap()["date"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    std::fs::write(&reached, old.replace(&date, "2000-01-01")).unwrap();
+    let (_, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(out["promises"][0]["status"], "unreached");
+    assert!(
+        out["promises"][0]["why"]
+            .as_str()
+            .unwrap()
+            .contains("over fresh_days"),
+        "{out:#}"
+    );
+}
+
+#[test]
+fn a_promise_of_what_runs_at_once_needs_sim_and_model_or_a_reason() {
+    let promise = |extra: &str| {
+        format!(
+            "[promises]\nsources = []\n[[promise]]\nname = \"redelivered\"\nsays = \"A message lost in a crash is delivered again.\"\nsource = \"SPEC.md:1\"\ncheck = [\"test\"]\n{extra}"
+        )
+    };
+    let dir = config("promise-concurrent", &promise(""));
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "unchecked");
+    assert!(
+        out["promises"][0]["why"]
+            .as_str()
+            .unwrap()
+            .contains("needs both `sim` and `model`")
+    );
+    let (_, next) = truefit_in(&dir, &["next"]);
+    assert_eq!(next["task"]["kind"], "unchecked-promise", "{next:#}");
+    std::fs::write(
+        dir.join("truefit.toml"),
+        promise("why = \"its test drives every crash point\""),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(
+        (code, &out["promises"][0]["status"]),
+        (Some(0), &"checked".into()),
+        "{out:#}"
+    );
+    // Said so where its words do not tell.
+    let plain =
+        promise("concurrent = true").replace("lost in a crash is delivered again", "is applied");
+    std::fs::write(dir.join("truefit.toml"), plain).unwrap();
+    let (code, _) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1));
+    // One of the two it needs is not enough.
+    let sim_only = promise("").replace("check = [\"test\"]", "check = [\"sim\"]");
+    std::fs::write(dir.join("truefit.toml"), sim_only).unwrap();
+    let (_, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(out["promises"][0]["status"], "unchecked", "{out:#}");
+}
+
+#[test]
+fn a_candidate_marked_a_promise_fails_until_registered_and_readmes_are_read_by_default() {
+    let toml = "[[standin]]\nname = \"git\"\nrun = [\"true\"]\nreal = [\"true\"]\n[[standin.case]]\nname = \"c\"\n";
+    let dir = config("promise-default", toml);
+    std::fs::write(dir.join("README.md"), "A ref is never moved backwards.\n").unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let hash = out["candidates"]["unmarked"][0]["hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (code, out) = truefit_in(&dir, &["promise", "--mark", &hash, "promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(
+        out["candidates"]["unregistered"][0]["source"],
+        "README.md:1"
+    );
+    let registered = format!(
+        "{toml}[[promise]]\nname = \"no-rewind\"\nsays = \"A ref is never moved backwards.\"\nsource = \"README.md:1\"\ncheck = [\"contract git\"]\n"
+    );
+    std::fs::write(dir.join("truefit.toml"), registered).unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "checked");
+}
+
+#[test]
+fn promise_faults_exit_2() {
+    let dir = config(
+        "promise-faults",
+        "[[promise]]\nname = \"a\"\nsays = \"s\"\nsource = \"f:1\"\ncheck = [\"model nope\", \"contract x\", \"frob\", \"sim now\"]\n\
+         [[promise]]\nname = \"a\"\nsays = \"s\"\nsource = \"f:1\"\ncheck = [\"test\"]\nkept = \"k\"\n",
+    );
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(2), "{out:#}");
+    assert_eq!(out["error"].as_array().unwrap().len(), 6, "{out:#}");
+    let (code, _) = truefit_in(&dir, &["promise", "--frob"]);
+    assert_eq!(code, Some(2));
 }

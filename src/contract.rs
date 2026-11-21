@@ -22,6 +22,10 @@ pub struct Config {
     pub sim: Option<crate::sim::Sim>,
     #[serde(default)]
     pub model: Vec<crate::model::Model>,
+    #[serde(default)]
+    pub promises: crate::promise::Sources,
+    #[serde(default)]
+    pub promise: Vec<crate::promise::Promise>,
 }
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
@@ -187,6 +191,7 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
         )]
     })?;
     let mut faults = crate::model::faults(&config.model);
+    faults.extend(crate::promise::faults(&config));
     if config.sim.as_ref().is_some_and(|s| s.run.is_empty()) {
         faults.push(fault(
             "[sim] run is empty",
@@ -337,6 +342,16 @@ pub fn record_file(name: &str) -> String {
 /// Where the last real run's differing cases are kept, while there are any.
 pub fn differ_file(name: &str) -> String {
     format!(".truefit/{name}.differ.json")
+}
+
+/// Writes `value` to `root/file`, or the fault that it cannot.
+pub fn save(root: &Path, file: &str, value: &Value) -> Result<(), Vec<Value>> {
+    write(root, file, value).map_err(|e| {
+        vec![fault(
+            format!("cannot write {file}: {e}"),
+            "make .truefit/ a directory truefit can write",
+        )]
+    })
 }
 
 /// Writes `value` to `root/file`, making the directories it is in.

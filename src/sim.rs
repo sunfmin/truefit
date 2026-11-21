@@ -5,12 +5,20 @@
 use crate::contract::{self, CONFIG, fault};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// Where kept seeds live, one `<seed>.json` each: committed.
 pub const SEEDS: &str = ".truefit/seeds";
+
+/// Where the last `truefit sim` keeps which invariants its steps checked
+/// (each step's `checked`), by name: committed.
+pub const REACHED: &str = ".truefit/sim.reached.json";
+
+/// Each invariant a run's steps checked: how many seeds did, and the first.
+type Reach = BTreeMap<String, (u64, String)>;
 
 /// `[sim]`: the command that runs the simulation (the seed is appended), and
 /// how many new seeds a plain `truefit sim` runs.
@@ -66,18 +74,16 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
             ),
         )]);
     };
+    let mut reach = Reach::new();
     if let Ask::Seed(seed) = &ask {
-        let report = match kept(root, seed) {
-            Some(k) => rerun(root, &sim, seed, &k)?,
-            None => fresh(root, &sim, seed)?,
-        };
+        let report = seed_run(root, &sim, seed, &mut reach)?;
         let next = advice(std::slice::from_ref(&report));
         let ok = report["result"] == "passes";
         return Ok((json!({"seed": report, "next": next}), ok));
     }
     let mut reports = Vec::new();
-    for (seed, k) in all_kept(root) {
-        reports.push(rerun(root, &sim, &seed, &k)?);
+    for (seed, _) in all_kept(root) {
+        reports.push(seed_run(root, &sim, &seed, &mut reach)?);
     }
     let kept_reports = reports.len();
     let (start, base) = (Instant::now(), entropy());
@@ -87,7 +93,7 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
         Ask::Run(Some(New::Seeds(n))) => ran < *n,
         _ => ran < sim.seeds,
     } {
-        let r = fresh(root, &sim, &new_seed(base, ran))?;
+        let r = seed_run(root, &sim, &new_seed(base, ran), &mut reach)?;
         ran += 1;
         seeds.push(json!({"seed": r["seed"], "result": r["result"]}));
         if r["result"] == "passes" {
@@ -101,11 +107,18 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
             break;
         }
     }
+    let reached: serde_json::Map<String, Value> = reach
+        .into_iter()
+        .map(|(n, (seeds, seed))| (n, json!({"seeds": seeds, "seed": seed})))
+        .collect();
+    let record =
+        json!({"date": contract::today(), "seeds": kept_reports as u64 + ran, "reached": reached});
+    contract::save(root, REACHED, &record)?;
     let next = advice(&reports);
     let ok = reports.iter().all(|r| r["result"] == "passes");
     let failing = reports.split_off(kept_reports);
     Ok((
-        json!({"kept": reports, "new": {"ran": ran, "passed": passed, "seeds": seeds, "failing": failing}, "next": next}),
+        json!({"kept": reports, "new": {"ran": ran, "passed": passed, "seeds": seeds, "failing": failing}, "reached": record["reached"], "next": next}),
         ok,
     ))
 }
@@ -159,10 +172,19 @@ fn once(root: &Path, sim: &Sim, seed: &str) -> Result<Run, Vec<Value>> {
     })
 }
 
-/// A seed no kept record holds: run it; when it fails, run it again to see
-/// that it reruns alike, and keep it.
-fn fresh(root: &Path, sim: &Sim, seed: &str) -> Result<Value, Vec<Value>> {
+/// One seed's run, noted in `reach`: a kept one rerun, any other fresh.
+fn seed_run(root: &Path, sim: &Sim, seed: &str, reach: &mut Reach) -> Result<Value, Vec<Value>> {
     let a = once(root, sim, seed)?;
+    note(reach, seed, &a.lines);
+    match kept(root, seed) {
+        Some(k) => rerun(root, sim, seed, &k, a),
+        None => fresh(root, sim, seed, a),
+    }
+}
+
+/// A seed no kept record holds, run as `a`: when it fails, run it again to
+/// see that it reruns alike, and keep it.
+fn fresh(root: &Path, sim: &Sim, seed: &str, a: Run) -> Result<Value, Vec<Value>> {
     let Some(verdict) = a.verdict() else {
         return Ok(broken(seed, &a));
     };
@@ -184,12 +206,11 @@ fn fresh(root: &Path, sim: &Sim, seed: &str) -> Result<Value, Vec<Value>> {
     Ok(report(seed, &record, Value::Null))
 }
 
-/// A kept seed, run again. Its steps as kept: the run is the same. Otherwise
+/// A kept seed, run again as `a`. Its steps as kept: the run is the same. Otherwise
 /// it runs once more: two runs that differ are nondeterminism; two alike are
 /// the system's code changed since, and they replace the kept steps.
-fn rerun(root: &Path, sim: &Sim, seed: &str, k: &Value) -> Result<Value, Vec<Value>> {
+fn rerun(root: &Path, sim: &Sim, seed: &str, k: &Value, a: Run) -> Result<Value, Vec<Value>> {
     let then = k["lines"].as_array().cloned().unwrap_or_default();
-    let a = once(root, sim, seed)?;
     let Some(verdict) = a.verdict() else {
         return Ok(broken(seed, &a));
     };
@@ -344,6 +365,45 @@ pub fn tasks(root: &Path) -> Vec<Value> {
     tasks
 }
 
+/// Notes each invariant a run's steps name in their `checked`.
+fn note(reach: &mut Reach, seed: &str, lines: &[Value]) {
+    let names: std::collections::BTreeSet<&str> = lines
+        .iter()
+        .flat_map(|l| l["checked"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .collect();
+    for n in names {
+        reach.entry(n.into()).or_insert((0, seed.into())).0 += 1;
+    }
+}
+
+/// Why the last `truefit sim` did not reach invariant `name`, or None: it did.
+pub fn unreached(root: &Path, name: &str, fresh_days: u64) -> Option<String> {
+    let r = contract::read(root, REACHED);
+    let Some(date) = r["date"].as_str() else {
+        return Some(format!("sim: no `truefit sim` run is recorded ({REACHED})"));
+    };
+    let age = contract::days(&contract::today())
+        .unwrap_or(0)
+        .saturating_sub(contract::days(date).unwrap_or(0));
+    if age > fresh_days {
+        return Some(format!(
+            "sim: the last `truefit sim` ran {age} days ago, on {date}: over fresh_days ({fresh_days})"
+        ));
+    }
+    let reached = r["reached"].as_object().into_iter().flatten();
+    if reached
+        .into_iter()
+        .any(|(n, _)| crate::promise::same_name(n, name))
+    {
+        return None;
+    }
+    Some(format!(
+        "sim: no step of the last `truefit sim` ({} seeds, on {date}) checked `{name}`",
+        r["seeds"]
+    ))
+}
+
 /// The steps a kept record holds: its lines but the verdict.
 fn steps(record: &Value) -> usize {
     record["lines"]
@@ -375,13 +435,7 @@ fn all_kept(root: &Path) -> Vec<(String, Value)> {
 }
 
 fn write(root: &Path, seed: &str, record: &Value) -> Result<(), Vec<Value>> {
-    let file = file(seed);
-    contract::write(root, &file, record).map_err(|e| {
-        vec![fault(
-            format!("cannot write {file}: {e}"),
-            format!("make {SEEDS}/ a directory truefit can write"),
-        )]
-    })
+    contract::save(root, &file(seed), record)
 }
 
 fn entropy() -> u64 {
