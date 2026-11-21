@@ -1,0 +1,15 @@
+{
+  "tree": "64f79cad9388dcedf77a5b56d4daf817fccbb43b+d1fba762150c532c",
+  "picker": "codex:01a1fd5d-3489-7212-9019-b90dbe7681b6:default",
+  "author": "claude-code:002b2cff-ac7c-5e6d-97cd-03e904e2e8c9:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/contract.rs:90:5: replace default_fault_env -> String with \"xyzzy\".into()",
+        "why": "The fault cases set fault_env explicitly, so they can pass even if omitting it sends the fault under the wrong environment variable.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}
