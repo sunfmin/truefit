@@ -24,3 +24,37 @@ covers = [
 [model.trace]
 applied = "r.state.applied"
 head = "r.state.next"
+
+# The promises SPEC.md makes, each tied to the checks that keep it.
+# `truefit promise` reports each; candidates are SPEC.md's sentences with a
+# promise word ([promises] sources, by default SPEC.md, README.md, docs/adr/*.md).
+[promises]
+sources = ["SPEC.md"]
+
+# Checked and reached: the simulation checks it on a redelivery (a step's
+# `checked`), Queue.cfg checks AppliedOnce.
+[[promise]]
+name = "applied-once"
+says = "A message is never applied twice, however often it is delivered."
+source = "SPEC.md:6"
+check = ["sim", "model queue"]
+
+# Unreached: no step checks it by name and Queue.cfg checks no invariant of it.
+[[promise]]
+name = "no-lost-message"
+says = "A crashed worker's message is never lost: the queue delivers it again."
+source = "SPEC.md:7"
+check = ["sim", "model queue"]
+
+# Unchecked: no check keeps it.
+[[promise]]
+name = "head-in-range"
+says = "Only the messages 1 to N are ever in the queue's head."
+source = "SPEC.md:8"
+
+# Kept: not checked here, and why.
+[[promise]]
+name = "seeded"
+says = "Every run of the simulation is chosen from its seed alone."
+source = "SPEC.md:9"
+kept = "truefit holds it: `truefit sim` reruns each failing seed and fails one whose runs differ"

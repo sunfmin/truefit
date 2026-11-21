@@ -9,4 +9,6 @@
 - **Trace**: what a real or simulated run recorded, checked as a behaviour of the model.
 - **Coverage record**: which code each of a model's actions stands for (file and function), and the commit at which the model was last confirmed to describe it. Code changed since makes the model stale.
 - **Invariant**: a property every state must hold; one home, used by the model, the simulation and the code's own checks.
+- **Promise**: a sentence the system's SPEC, README or ADRs say of its behaviour ("never", "exactly once", "at most one", "within N seconds"), registered by its invariant's name and tied to the checks that keep it: test, contract, sim, model, cheapest first (the **ladder**). One a named check never reached, or none checks, fails; one about what runs at once or in an order the system does not choose needs a simulation and a model.
+- **Candidate**: a sentence with a promise word, not yet marked a promise or not.
 - **Tie**: any of the above that binds a test or a model to the real system.
