@@ -1,0 +1,10 @@
+{
+  "tree": "a61ad8939ab8692ff96430cd8561dfa3376a0990+d1fba762150c532c",
+  "lines": 281,
+  "serves": "truefit#9",
+  "considered": "model::check (TLC run), check_trace (one module builder for both the Next and the Invariants check), contract::save/read for the record, next::entries for listing traces, the config-section reader shared by unreached and the invariants check (checked)",
+  "reviewer": "codex:01a1fd75-77f1-7331-8df3-94b7e1935b68:default",
+  "author": "claude-code:8787dd70-1026-5a5c-8c7d-a1fd8572a456:opus",
+  "cut": "src/promise.rs: have status return the per-model backing reasons alongside its report so tasks can group the same reasons without walking the checks and calling unbacked again. src/model.rs: in check_backed, spawn from borrowed paths with one helper that returns a handle, pairing each reject trace’s two handles as they are created to remove the cloned list and zip while keeping the checks concurrent. In variables, split the borrowed capture and trim and collect once, eliminating the temporary vector per declaration.",
+  "answer": "Made all three: status returns (report, models not backing it) and tasks groups those; spawn_trace takes borrowed paths, each reject trace's two handles paired as made, no clone or zip; variables flat-maps the capture's split once."
+}

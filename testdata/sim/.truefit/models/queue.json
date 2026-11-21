@@ -1,0 +1,24 @@
+{
+  "commit": "fa5aaed3402d0127cea9beab327e1df73815a87c",
+  "date": "2026-11-21",
+  "inputs": "b13f5e7b09d59f4e11f66c67aba120ca9016c2bd7129bc956c4bcb41e86426f5",
+  "result": "passes",
+  "traces": {
+    "accept": [
+      {
+        "breaks": null,
+        "file": ".truefit/traces/queue/accept/1.jsonl",
+        "result": "allowed",
+        "step": null
+      }
+    ],
+    "reject": [
+      {
+        "breaks": "AppliedOnce",
+        "file": ".truefit/traces/queue/reject/3.jsonl",
+        "result": "disallowed",
+        "step": 3
+      }
+    ]
+  }
+}

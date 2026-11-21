@@ -42,6 +42,10 @@ Each declared stand-in and its real program answer the same cases alike.
 - A real program truefit cannot run here (not found, or its `ready` command
   fails: no login, no account, no device) is `not run`, with what it `needs`.
   It is never a pass: run it where it can run.
+- A case whose own `ready` fails here (a fault the real program cannot be made
+  to produce on this host: an unreachable network) is `not run`, with its
+  `needs`; the other cases still run, but the real run is `not run` and
+  records nothing.
 
 Run from the directory holding `truefit.toml`; command paths with a `/` in
 them are relative to it, others are looked up on PATH.
@@ -62,6 +66,9 @@ ready = ["git", "config", "user.name"] # must succeed, or the real run is not ru
 version = ["git", "--version"]        # its first line is kept as the version
 compare = ["exit", "stdout", "stderr", "files"] # default: exit and stdout
 normalise = [{ pattern = '\d{4}-\d\d-\d\d', replace = "<date>" }]
+faults = ["push-rejected", "unreachable"] # the failures it answers, each held by a case
+fault_env = "FAKE_GIT_FAULT"          # tells the stand-in which (default TRUEFIT_FAULT)
+# no_faults = { why = "...", sha256 = "..." } # instead: no call of it can fail usefully
 
 [[standin.case]]
 name = "status-clean"                 # each case: a command line, stdin, environment
@@ -70,6 +77,13 @@ args = ["status", "--porcelain"]      # appended to `run` and to `real`
 stdin = ""
 env = { GIT_PAGER = "cat" }
 files = ["out.txt"]                   # files it writes there, compared under `files`
+
+[[standin.case]]
+name = "push-unreachable"
+fault = "unreachable"                 # the stand-in runs with FAKE_GIT_FAULT=unreachable
+args = ["push", "origin", "main"]     # the real side, never told, fails for real
+ready = ["sh", "-c", "! curl -sm2 https://example.com"] # else this case is not run,
+needs = "a host with no network"      #   with what it needs
 ```
 
 Both sides run each case in their own fresh directory. That directory's path
@@ -77,6 +91,12 @@ becomes `<dir>` in their answers; then each `normalise` rule (a regex and its
 replacement) is applied to stdout, stderr and the files, on both sides alike.
 Normalise only what differs from run to run (dates, temporary paths, ids,
 versions), never what the system decides on.
+
+A stand-in's `faults` are the failures it can answer. Each is a name its
+`fault_env` variable selects (how the stand-in reads it is the repo's own);
+the stand-in side of a case with `fault` runs with it set, the real side
+without, so the case passes only when the stand-in's failure answers as the
+real program's does. Each declared fault needs at least one such case.
 
 ### What a contract covers
 
@@ -88,8 +108,23 @@ call site and each answer it tells apart. Compare the parts it reads, and no
 more. A behaviour the system relies on that no case holds is untested
 against reality; when one breaks in production, add the case first.
 
+Faults are found the same way: at each call site, read the error path. A
+stand-in that can only succeed makes a test of every failure impossible to
+write, and none is worse than a failure after a step that took effect
+elsewhere (a token issued, a file written, a message sent). sesame#24:
+its refresh drops a token the provider just issued when the store's write
+fails, so a rotating provider's login is lost; its stand-in of `op`
+answered no failed write, its contract held only the answers sesame tells
+apart (and it treats every failed write alike), and line coverage counted
+the save covered on success. For each call whose error the system handles,
+or drops, after an earlier step took effect: declare the fault, a case
+whose real side fails so, and the system's test that runs it. A stand-in
+none of whose calls can fail usefully gets `no_faults`, with why and the
+stand-in's SHA-256: it is not asked again until the stand-in changes.
+
 `testdata/plutil/` is a worked example: a stand-in of macOS `plutil` that
-agrees, a wrong one that differs, and one no contract declares.
+agrees (with one fault, a write plutil refuses), a wrong one that differs
+and declares no fault, and one no contract declares.
 
 ## `truefit sim`
 
@@ -180,13 +215,25 @@ of them.
   and the `behaviour` that reaches it: each state with the `action` that
   took it there and its variables. One that is `broken` (TLC could not parse
   or evaluate it) or `timed out` has the `output` TLC printed from its first
-  error. Cheap when the bounds are small: put it in the gate.
+  error. Cheap when the bounds are small: put it in the gate. With it, at
+  once, it reruns the model's committed traces (`traces`): each under
+  `.truefit/traces/<name>/accept/` must be `allowed`, and each under
+  `reject/` `disallowed`, its records breaking one of the config's
+  invariants (`breaks`, at `breaks_at`; the unmapped variables keep their
+  initial values). Any that is not fails the model, `wrong` naming each
+  trace: an accept trace disallowed is a guard too strict; a reject trace
+  allowed is a model too permissive; one that breaks no invariant, a
+  property too weak. Fix the model or the code; never weaken the property,
+  or drop the trace, to pass. Each run is recorded in
+  `.truefit/models/<name>.json` (`commit`, `result`, each trace's, and a
+  hash of the `inputs`: the spec, config and traces); commit it.
 - `truefit model [<name>] --trace <file>`: checks a run's records as a
   behaviour of the model that declares a `[model.trace]` mapping (name it
   when more than one does). The records are the file's JSON lines that have
   a `step` (the simulation's step lines, or a real run's in the same shape;
   other lines are skipped), or the `lines` of a kept seed
-  (`.truefit/seeds/<seed>.json`). From the model's initial state, each
+  (`.truefit/seeds/<seed>.json`); a line with a `verdict` is none. From
+  the model's initial state, each
   record must be one step of its next-state action, with every mapped
   variable equal to the record's; unmapped variables may take any value the
   model allows (TLC tries each). `allowed`: the model has a behaviour that is
@@ -205,7 +252,8 @@ downloads it once from the official release into
 `~/.local/share/truefit/tlc/<version>/`; set `TRUEFIT_TLC_FROM` to a URL (or
 `file://` path) of a copy of that release where GitHub is out of reach: one
 whose checksum differs is refused. TLC runs on `java` (11 or later) on PATH.
-It runs in a temporary directory; nothing is written in the repo.
+It runs in a temporary directory; nothing but the record is written in the
+repo.
 
 ### `[[model]]` in `truefit.toml`
 
@@ -236,7 +284,10 @@ A trace's check keeps the config's CONSTANT sections and replaces the rest.
 
 ### What to model
 
-truefit does not write the model; the system's repo does. Model the design
+truefit does not write the model; the system's repo does. Each model's
+scope is one promise and the factors behind it (the steps, faults and
+orders that can break it), not the whole system: a second promise is a
+second model, unless the same factors are behind both. Model the design
 where a bug costs the most and tests reach the least: what runs at once or
 in an order the system does not choose (workers, retries, crashes and
 restarts, messages lost or delivered twice, a lease that expires), where
@@ -285,6 +336,27 @@ needs both `sim` and `model`.
   `--trace`: a run the model does not allow means the model and the code
   disagree, at that step.
 
+### A model checks a promise only when it is backed
+
+TLC passing is not enough: a model can pass and never reach a state the
+system reaches (guards too strict, state abstracted away), or allow what
+the system must not (transitions too permissive). A trace alone is not
+enough either: a model bent to a trace can lose the property. So a model
+named by a promise's `model <name>` checks it only when its last
+`truefit model`, of the inputs as they are now, shows all three:
+
+1. TLC passes: the config's invariant of the promise's name holds.
+2. Accepted: a trace of a real run, or of a passing seed, is `allowed`,
+   its file committed under `.truefit/traces/<name>/accept/`.
+3. Rejected: a trace that breaks the promise (a failing seed's lines,
+   `.truefit/seeds/<seed>.json`, or a run written by hand that does the
+   wrong thing) is `disallowed` and breaks the promise's invariant,
+   committed under `.truefit/traces/<name>/reject/`.
+
+Check each with `truefit model <name> --trace <file>` before you commit it.
+Where one is missing the promise is `unbacked` (`truefit promise`) and
+`truefit next` gives an `unbacked-model` task.
+
 Where pstack's `create-formal-verification-skill` is installed
 (`~/.claude/skills/` or `~/.agents/skills/`), run
 `/create-formal-verification-skill` to choose the target and write the
@@ -302,6 +374,11 @@ applies it again when it is redelivered, `disallowed` at step 3:
 ./sim 3 > bad.jsonl && truefit model --trace bad.jsonl  # disallowed, step 3
 ```
 
+Both are committed, `.truefit/traces/queue/accept/1.jsonl` and
+`reject/3.jsonl`, so `truefit model` reruns them: weaken `AppliedOnce`
+(`applied[m] <= 2`) and it fails naming the reject trace; give `ApplyAck`
+a guard too strict (`head < N`) and it fails naming the accept trace.
+
 ## `truefit promise`
 
 Each promise the system makes, tied to the check that keeps it. A system's
@@ -310,8 +387,9 @@ one", "within N seconds"); one no check keeps can break unseen.
 
 - `truefit promise`: reports each `[[promise]]` by its `status`: `checked`
   (each named check reaches it), `unreached` (a named check never reached
-  it: `why` names which), `unchecked` (no check, or too cheap a one without
-  its reason), or `kept` (not checked, and why). And `candidates`: the
+  it: `why` names which), `unbacked` (a model reaches it, but is not
+  backed: see "A model checks a promise only when it is backed"),
+  `unchecked` (no check, or too cheap a one without its reason), or `kept` (not checked, and why). And `candidates`: the
   sentences of `[promises] sources` with a promise word (never, always, at
   most, exactly once, only, within, every), `found` in all, those
   `unmarked`, and those marked a promise that no `[[promise]]` registers
@@ -345,9 +423,13 @@ A check is reached, or the promise is `unreached`:
 - `sim`: a step of the last `truefit sim` (`.truefit/sim.reached.json`, no
   older than `[contract] fresh_days`) named the promise in its `checked`.
 - `model <name>`: that model's config checks an invariant (or property) of
-  the promise's name.
-- `test`, `contract <stand-in>`: declared; truefit cannot see a test reach
-  it, and a contract's freshness is `truefit contract`'s.
+  the promise's name; and it is backed (its last `truefit model` passed
+  with an accept trace and a reject trace that breaks that invariant), or
+  the promise is `unbacked`.
+- `contract <stand-in>`: the stand-in declares a fault (or `no_faults` for
+  it as it is now): through one that can only succeed, no test reaches the
+  failures a promise is about. Its freshness is `truefit contract`'s.
+- `test`: declared; truefit cannot see a test reach it.
 
 Names are compared without case and punctuation: `applied-once` is the
 model's `AppliedOnce`.
@@ -370,8 +452,8 @@ why = ""                  # the reason for a cheaper check on a concurrent one
 ```
 
 `testdata/sim/` is a worked example: `SPEC.md`'s four promises, one checked
-and reached (`applied-once`, after `truefit sim`), one registered to `sim`
-and `model queue` that neither reaches (`no-lost-message`), one unchecked,
+and reached (`applied-once`, after `truefit sim` and `truefit model`), one
+registered to `sim` and `model queue` that neither reaches (`no-lost-message`), one unchecked,
 one kept with its reason; and one candidate to mark `not`.
 
 ## `truefit next [--all]`
@@ -393,6 +475,10 @@ compares models' coverage with git, never running TLC.
 - `stale-contract`: a declared stand-in whose last passing real run
   (`.truefit/<name>.json`) is missing, older than `fresh_days`, or against
   another version than its `version` command answers here now.
+- `standin-without-faults`: a declared stand-in with no `faults`, and no
+  `no_faults` whose `sha256` is the stand-in's now (`evidence` has it): read
+  the system's code at each call to the real program, and declare each fault
+  it handles after a step took effect, with its case and the system's test.
 - `differing-case`: the last real run found cases whose answers differ
   (`.truefit/<name>.differ.json`, with both answers): make the stand-in
   answer as the real program does.
@@ -422,6 +508,10 @@ compares models' coverage with git, never running TLC.
   registered promise names: register the promise it breaks (or name the
   invariant as the registered one), so the seed's fix is tied to it; or
   mark it `not` with why.
+- `unbacked-model`: a model a promise names that does not back it: no
+  passing `truefit model` recorded of its inputs now, no accept trace it
+  allows, or no reject trace that breaks the promise (`evidence`: each
+  promise and why).
 - `stale-model`: a model whose covered files (`covers`) changed since the
   `commit` its coverage record names, or whose `commit` this repo's history
   lacks: bring the model in line with the code, check it, and move `commit`

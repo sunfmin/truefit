@@ -13,6 +13,15 @@ use std::time::{Duration, Instant};
 pub const TLC_VERSION: &str = "1.7.4";
 const TLC_SHA256: &str = "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88";
 
+/// Each model's committed traces: `<name>/accept/`, runs it must allow, and
+/// `<name>/reject/`, runs that break a promise, which it must not.
+pub const TRACES: &str = ".truefit/traces";
+
+/// Where each model's last `truefit model` is recorded, with the commit.
+fn record_file(name: &str) -> String {
+    format!(".truefit/models/{name}.json")
+}
+
 /// `[[model]]`: a spec, its TLC config, its time limit, and its coverage
 /// record: the code each action stands for, as of `commit`.
 #[derive(Deserialize)]
@@ -121,7 +130,7 @@ pub fn run(
     let (jar, installed) = tlc()?;
     let tlc = json!({"version": TLC_VERSION, "sha256": TLC_SHA256, "jar": jar, "installed_now": installed});
     if let Some(file) = trace {
-        let report = check_trace(root, chosen[0], &jar, file)?;
+        let report = check_trace(root, chosen[0], &jar, file, Against::Next)?;
         let ok = report["result"] == "allowed";
         let next = if ok {
             "nothing: the model allows this run".to_string()
@@ -140,7 +149,7 @@ pub fn run(
     }
     let mut reports = Vec::new();
     for m in chosen {
-        reports.push(check(root, m, &jar)?);
+        reports.push(check_backed(root, m, &jar)?);
     }
     let any = |r: &str| reports.iter().any(|x| x["result"] == r);
     let mut next = Vec::new();
@@ -152,6 +161,9 @@ pub fn run(
     }
     if any("broken") {
         next.push("TLC could not check a model: correct the spec or config by its `output`");
+    }
+    if reports.iter().any(|r| r.get("wrong").is_some()) {
+        next.push("a committed trace the model now answers otherwise (`wrong`): an accept trace disallowed is a guard too strict, a reject trace allowed or breaking no invariant is a model too permissive or a property too weak. Fix the model or the code; never weaken the property, or drop the trace, to pass");
     }
     let ok = next.is_empty();
     if ok {
@@ -207,10 +219,14 @@ fn tlc() -> Result<(PathBuf, bool), Vec<Value>> {
     Ok((jar, true))
 }
 
-fn sha256(path: &Path) -> Option<String> {
+pub fn sha256(path: &Path) -> Option<String> {
+    Some(digest(&std::fs::read(path).ok()?))
+}
+
+fn digest(bytes: &[u8]) -> String {
     use sha2::Digest;
-    let digest = sha2::Sha256::digest(std::fs::read(path).ok()?);
-    Some(digest.iter().map(|b| format!("{b:02x}")).collect())
+    let digest = sha2::Sha256::digest(bytes);
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// What one TLC run printed, what that says, whether it completed without
@@ -244,6 +260,8 @@ fn run_tlc(
     let start = Instant::now();
     let mut child = Command::new("java")
         .arg("-XX:+UseParallelGC")
+        // Its own temporary files: TLC runs at once share none.
+        .arg(format!("-Djava.io.tmpdir={}", work.display()))
         .arg(format!(
             "-DTLA-Library={}",
             lib.parent().unwrap_or(root).display()
@@ -304,6 +322,185 @@ fn paths(root: &Path, m: &Model) -> Result<(PathBuf, PathBuf), Vec<Value>> {
             format!("correct its spec and config in {CONFIG}: paths relative to it"),
         )]),
     }
+}
+
+/// The traces committed under `TRACES/<name>/<kind>/`, sorted.
+fn traces(root: &Path, name: &str, kind: &str) -> Vec<String> {
+    let dir = format!("{TRACES}/{name}/{kind}");
+    let mut files: Vec<String> = crate::next::entries(&root.join(&dir))
+        .into_iter()
+        .filter(|n| !n.starts_with('.'))
+        .map(|n| format!("{dir}/{n}"))
+        .filter(|f| root.join(f).is_file())
+        .collect();
+    files.sort();
+    files
+}
+
+/// Checks `m` with TLC and, at once, each committed trace: an accept trace
+/// must be allowed; a reject trace disallowed, and its records must break an
+/// invariant of the config. Any that is not fails the model. Records the
+/// result, with the commit, in `record_file`.
+fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>> {
+    let (accept, reject) = (
+        traces(root, &m.name, "accept"),
+        traces(root, &m.name, "reject"),
+    );
+    let (r, accepted, rejected) = std::thread::scope(|s| {
+        let tlc = s.spawn(|| check(root, m, jar));
+        let run = |f, against| spawn_trace(s, root, m, jar, f, against);
+        let a: Vec<_> = accept.iter().map(|f| run(f, Against::Next)).collect();
+        let b: Vec<_> = reject
+            .iter()
+            .map(|f| (run(f, Against::Next), run(f, Against::Invariants)))
+            .collect();
+        let join = |h: std::thread::ScopedJoinHandle<'_, _>| h.join().unwrap();
+        let a: Result<Vec<Value>, Vec<Value>> = a.into_iter().map(join).collect();
+        let b: Result<Vec<(Value, Value)>, Vec<Value>> = b
+            .into_iter()
+            .map(|(n, i)| Ok((join(n)?, join(i)?)))
+            .collect();
+        (join(tlc), a, b)
+    });
+    let (mut r, accepted, rejected) = (r?, accepted?, rejected?);
+    let mut wrong = Vec::new();
+    for t in &accepted {
+        if t["result"] != "allowed" {
+            wrong.push(format!(
+                "accept trace {} is {}{}: the model no longer allows this run",
+                t["file"].as_str().unwrap_or(""),
+                t["result"].as_str().unwrap_or(""),
+                at(t)
+            ));
+        }
+    }
+    let mut reject_reports = Vec::new();
+    for (mut t, inv) in rejected {
+        let file = t["file"].as_str().unwrap_or("").to_string();
+        if t["result"] == "allowed" {
+            wrong.push(format!(
+                "reject trace {file} is allowed: the model is too permissive"
+            ));
+        } else if t["result"] != "disallowed" {
+            wrong.push(format!(
+                "reject trace {file} is {}",
+                t["result"].as_str().unwrap_or("")
+            ));
+        }
+        match inv["result"].as_str() {
+            Some("breaks") => {}
+            Some("holds") => wrong.push(format!(
+                "reject trace {file} breaks none of {}'s invariants: the property is too weak to catch it",
+                m.config
+            )),
+            other => wrong.push(format!(
+                "reject trace {file}: its invariants' check is {}{}",
+                other.unwrap_or(""),
+                inv.get("output").map_or(String::new(), |o| format!(": {o}"))
+            )),
+        }
+        t["breaks"] = inv["breaks"].clone();
+        t["breaks_at"] = inv["step"].clone();
+        reject_reports.push(t);
+    }
+    r["traces"] = json!({"accept": accepted, "reject": reject_reports});
+    if !wrong.is_empty() {
+        if r["result"] == "passes" {
+            r["result"] = "fails".into();
+            r["error"] = wrong.join("; ").into();
+        }
+        r["wrong"] = wrong.into();
+    }
+    let brief = |ts: &[Value]| -> Vec<Value> {
+        ts.iter()
+            .map(|t| json!({"file": t["file"], "result": t["result"], "step": t["step"], "breaks": t.get("breaks")}))
+            .collect()
+    };
+    let record = json!({
+        "commit": contract::git(root, &["rev-parse", "HEAD"]).map(|c| c.trim().to_string()),
+        "date": contract::today(),
+        "inputs": inputs(root, m),
+        "result": r["result"],
+        "traces": {"accept": brief(&accepted), "reject": brief(&reject_reports)},
+    });
+    contract::save(root, &record_file(&m.name), &record)?;
+    Ok(r)
+}
+
+/// A trace's check, on a thread of `s`.
+fn spawn_trace<'s, 'e>(
+    s: &'s std::thread::Scope<'s, 'e>,
+    root: &'e Path,
+    m: &'e Model,
+    jar: &'e Path,
+    file: &'e str,
+    against: Against,
+) -> std::thread::ScopedJoinHandle<'s, Result<Value, Vec<Value>>> {
+    s.spawn(move || check_trace(root, m, jar, file, against))
+}
+
+/// ` at step N` when a trace report names the step it stopped at.
+fn at(t: &Value) -> String {
+    t.get("step")
+        .map_or(String::new(), |s| format!(" at step {s}"))
+}
+
+/// The SHA-256 of what a model's check reads: its declaration, spec, config
+/// and committed traces. A record of other inputs is not this model's.
+fn inputs(root: &Path, m: &Model) -> String {
+    let mut all = format!("{}\n{}\n{:?}\n", m.init, m.next, m.trace).into_bytes();
+    let mut files = vec![m.spec.clone(), m.config.clone()];
+    files.extend(traces(root, &m.name, "accept"));
+    files.extend(traces(root, &m.name, "reject"));
+    for f in files {
+        all.extend(f.as_bytes());
+        all.extend(std::fs::read(root.join(&f)).unwrap_or_default());
+    }
+    digest(&all)
+}
+
+/// Why model `model`'s record does not back promise `promise`, or None: its
+/// last check, of these inputs, passed with a trace accepted and a trace
+/// rejected that breaks the promise's invariant.
+pub fn unbacked(root: &Path, models: &[Model], model: &str, promise: &str) -> Option<String> {
+    let m = models.iter().find(|m| m.name == model)?;
+    let file = record_file(model);
+    let r = contract::read(root, &file);
+    let mut why = Vec::new();
+    if r.is_null() {
+        return Some(format!(
+            "model {model}: no `truefit model {model}` run is recorded ({file})"
+        ));
+    }
+    if r["inputs"] != inputs(root, m).as_str() {
+        why.push("its spec, config or traces changed since its last `truefit model`".to_string());
+    }
+    if r["result"] != "passes" {
+        why.push(format!(
+            "its last check {}",
+            r["result"].as_str().unwrap_or("did not finish")
+        ));
+    }
+    let traces = |kind: &str| r["traces"][kind].as_array().cloned().unwrap_or_default();
+    if !traces("accept").iter().any(|t| t["result"] == "allowed") {
+        why.push(format!(
+            "no accept trace it allows ({TRACES}/{model}/accept/)"
+        ));
+    }
+    let breaks = |t: &Value| {
+        t["breaks"]
+            .as_str()
+            .is_some_and(|b| crate::promise::same_name(b, promise))
+    };
+    if !traces("reject")
+        .iter()
+        .any(|t| t["result"] == "disallowed" && breaks(t))
+    {
+        why.push(format!(
+            "no reject trace it disallows that breaks `{promise}` ({TRACES}/{model}/reject/)"
+        ));
+    }
+    (!why.is_empty()).then(|| format!("model {model}: {}", why.join("; ")))
 }
 
 fn check(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>> {
@@ -404,8 +601,9 @@ fn tail(output: &str) -> String {
         .join("\n")
 }
 
-/// A run's records: each line of `file` that is a JSON object with a `step`,
-/// or the `lines` of a kept seed (`.truefit/seeds/<seed>.json`).
+/// A run's records: each line of `file` that is a JSON object with a `step`
+/// and no `verdict` (a simulation's last line), or the `lines` of a kept
+/// seed (`.truefit/seeds/<seed>.json`).
 fn records(root: &Path, file: &str) -> Result<Vec<Value>, Vec<Value>> {
     let text = std::fs::read_to_string(root.join(file)).map_err(|e| {
         vec![fault(
@@ -424,7 +622,7 @@ fn records(root: &Path, file: &str) -> Result<Vec<Value>, Vec<Value>> {
     };
     let records: Vec<Value> = lines
         .into_iter()
-        .filter(|l| l.get("step").is_some())
+        .filter(|l| l.get("step").is_some() && l.get("verdict").is_none())
         .collect();
     if records.is_empty() {
         return Err(vec![fault(
@@ -435,14 +633,44 @@ fn records(root: &Path, file: &str) -> Result<Vec<Value>, Vec<Value>> {
     Ok(records)
 }
 
-/// Checks the records of `file` as a behaviour of `m`: from its initial
-/// state, each record one step of its next-state action, the variables
-/// `[model.trace]` maps equal to the record's. TLC searches every way the
-/// unmapped variables may go; the trace is allowed when one reaches its end.
-fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, Vec<Value>> {
+/// What a trace is checked against: the model's next-state action, or the
+/// config's invariants on its records' states alone.
+#[derive(Clone, Copy)]
+enum Against {
+    Next,
+    Invariants,
+}
+
+/// Checks the records of `file` against `m`: from its initial state, each
+/// record one step, the variables `[model.trace]` maps equal to the
+/// record's. Against `Next`, each step is one of its next-state action; TLC
+/// searches every way the unmapped variables may go, and the trace is
+/// allowed when one reaches its end. Against `Invariants`, the unmapped
+/// variables keep their initial values, and the trace `breaks` the first of
+/// the config's invariants one of its states violates, or `holds`.
+fn check_trace(
+    root: &Path,
+    m: &Model,
+    jar: &Path,
+    file: &str,
+    against: Against,
+) -> Result<Value, Vec<Value>> {
     let records = records(root, file)?;
     let (spec, cfg) = paths(root, m)?;
     let module = spec.file_stem().map_or("".into(), |s| s.to_string_lossy());
+    let config = std::fs::read_to_string(&cfg).unwrap_or_default();
+    let (step, invariants) = match against {
+        Against::Next => (m.next.clone(), vec!["TruefitUnfinished".to_string()]),
+        Against::Invariants => {
+            let text = std::fs::read_to_string(&spec).unwrap_or_default();
+            let free: Vec<String> = variables(&text)
+                .into_iter()
+                .filter(|v| !m.trace.contains_key(v))
+                .collect();
+            let invariants = checked(&config, &["INVARIANT", "INVARIANTS"]);
+            (format!("UNCHANGED <<{}>>", free.join(", ")), invariants)
+        }
+    };
     let matches: Vec<String> = m
         .trace
         .iter()
@@ -452,7 +680,7 @@ fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, 
         "---- MODULE TruefitTrace ----\nEXTENDS {module}, Naturals, Sequences\nVARIABLE truefit_l\n\
          TruefitRecords == <<\n  {}\n>>\n\
          TruefitInit == truefit_l = 0 /\\ {}\n\
-         TruefitNext == /\\ truefit_l < Len(TruefitRecords)\n  /\\ truefit_l' = truefit_l + 1\n  /\\ {}\n  \
+         TruefitNext == /\\ truefit_l < Len(TruefitRecords)\n  /\\ truefit_l' = truefit_l + 1\n  /\\ {step}\n  \
          /\\ LET r == TruefitRecords[truefit_l + 1] IN\n     /\\ {}\n\
          TruefitUnfinished == truefit_l < Len(TruefitRecords)\n====\n",
         records
@@ -461,16 +689,21 @@ fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, 
             .collect::<Vec<_>>()
             .join(",\n  "),
         m.init,
-        m.next,
         matches.join("\n     /\\ "),
     );
-    let config = std::fs::read_to_string(&cfg).unwrap_or_default();
+    let check = match invariants.is_empty() {
+        true => String::new(),
+        false => format!("INVARIANT {}\n", invariants.join(" ")),
+    };
     let work = workdir()?;
     let (trace_tla, trace_cfg) = (work.join("TruefitTrace.tla"), work.join("TruefitTrace.cfg"));
     let written = std::fs::write(&trace_tla, tla).and_then(|()| {
         std::fs::write(
             &trace_cfg,
-            format!("{}\nINIT TruefitInit\nNEXT TruefitNext\nINVARIANT TruefitUnfinished\nCHECK_DEADLOCK FALSE\n", constants(&config)),
+            format!(
+                "{}\nINIT TruefitInit\nNEXT TruefitNext\n{check}CHECK_DEADLOCK FALSE\n",
+                constants(&config)
+            ),
         )
     });
     written.map_err(|e| {
@@ -483,11 +716,25 @@ fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, 
     let read = t.read;
     let mut r =
         json!({"file": file, "model": m.name, "records": records.len(), "seconds": t.seconds});
+    let violated = read
+        .error
+        .as_deref()
+        .and_then(|e| e.strip_prefix("Invariant "))
+        .and_then(|e| e.strip_suffix(" is violated."));
     if t.timed_out {
         r["result"] = "timed out".into();
         r["output"] = tail(&t.output).into();
-    } else if read.error.as_deref() == Some("Invariant TruefitUnfinished is violated.") {
+    } else if let (Against::Next, Some("TruefitUnfinished")) = (against, violated) {
         r["result"] = "allowed".into();
+    } else if let (Against::Invariants, Some(name)) = (against, violated) {
+        // The behaviour's first state is the initial one, before any record.
+        r["result"] = "breaks".into();
+        r["breaks"] = name.into();
+        r["step"] = (read.behaviour.len().checked_sub(2))
+            .and_then(|i| records[i].get("step").cloned())
+            .into();
+    } else if let (Against::Invariants, true) = (against, t.completed) {
+        r["result"] = "holds".into();
     } else if t.completed {
         // The search ends one state past the last record it allowed.
         let at = read.depth.unwrap_or(1).max(1) as usize;
@@ -503,6 +750,20 @@ fn check_trace(root: &Path, m: &Model, jar: &Path, file: &str) -> Result<Value, 
         r["output"] = tail(&t.output).into();
     }
     Ok(r)
+}
+
+/// The variables a TLA+ module declares (`VARIABLE` or `VARIABLES`), outside comments.
+fn variables(spec: &str) -> Vec<String> {
+    let comments = regex_lite::Regex::new(r"(?s)\(\*.*?\*\)|\\\*[^\n]*").unwrap();
+    let text = comments.replace_all(spec, " ");
+    let declared =
+        regex_lite::Regex::new(r"\bVARIABLES?\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)").unwrap();
+    declared
+        .captures_iter(&text)
+        .filter_map(|c| c.get(1))
+        .flat_map(|names| names.as_str().split(','))
+        .map(|v| v.trim().to_string())
+        .collect()
 }
 
 /// A JSON value as a TLA+ value: objects as records (keys that are no TLA+
@@ -558,16 +819,12 @@ const KEYWORDS: &str = "CONSTANT CONSTANTS INIT NEXT SPECIFICATION INVARIANT INV
 pub fn unreached(root: &Path, models: &[Model], model: &str, name: &str) -> Option<String> {
     let m = models.iter().find(|m| m.name == model)?;
     let config = std::fs::read_to_string(root.join(&m.config)).unwrap_or_default();
-    let mut checking = false;
-    for line in config.lines() {
-        let line = line.split("\\*").next().unwrap_or("");
-        for word in line.split_whitespace() {
-            if KEYWORDS.split(' ').any(|k| k == word) {
-                checking = ["INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES"].contains(&word);
-            } else if checking && crate::promise::same_name(word, name) {
-                return None;
-            }
-        }
+    let sections = ["INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES"];
+    if checked(&config, &sections)
+        .iter()
+        .any(|c| crate::promise::same_name(c, name))
+    {
+        return None;
     }
     Some(format!(
         "model {model}: {} checks no invariant named `{name}`",
@@ -575,6 +832,24 @@ pub fn unreached(root: &Path, models: &[Model], model: &str, name: &str) -> Opti
     ))
 }
 
+/// The names a TLC config lists in its `sections` (INVARIANT, PROPERTY ...).
+fn checked(config: &str, sections: &[&str]) -> Vec<String> {
+    let mut checking = false;
+    let mut names = Vec::new();
+    for line in config.lines() {
+        let line = line.split("\\*").next().unwrap_or("");
+        for word in line.split_whitespace() {
+            if KEYWORDS.split(' ').any(|k| k == word) {
+                checking = sections.contains(&word);
+            } else if checking {
+                names.push(word.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// A git command's output in `root`, or None where it fails.
 /// The CONSTANT sections of a TLC config, which a trace's check keeps.
 fn constants(config: &str) -> String {
     let mut keep = false;
@@ -690,6 +965,12 @@ mod tests {
     }
 
     #[test]
+    fn a_specs_variables_are_its_declarations_outside_comments() {
+        let spec = "(* VARIABLE hidden *)\nVARIABLES\n    a,  \\* the a, b\n    b\nVARIABLE c\nvars == <<a, b, c>>\n";
+        assert_eq!(variables(spec), ["a", "b", "c"]);
+    }
+
+    #[test]
     fn a_trace_keeps_only_the_configs_constants() {
         let cfg = "\\* c\nCONSTANT N = 3 \\* three\n  M = 2\nSPECIFICATION Spec\nINVARIANT A\n B\nCONSTANTS P = {p1}\n";
         assert_eq!(
@@ -712,6 +993,14 @@ mod tests {
                    {"action": "ApplyCrash line 3, col 1 to line 4, col 2 of module Queue", "state": {"x": "2"}}])
         );
         assert_eq!((r.states, r.depth), (Some(4), Some(3)));
+    }
+
+    #[test]
+    fn states_come_from_a_final_summary_without_commas_after_a_progress_line_with_them() {
+        // TLC 1.7.4 on guild's HubLease (SYMMETRY): truefit#13.
+        let out = "Progress(21) at 2026-11-21 18:42:54: 626,801 states generated (626,801 s/min), 247,557 distinct states found (247,557 ds/min), 60,000 states left on queue.\nModel checking completed. No error has been found.\n2967722 states generated, 892402 distinct states found, 0 states left on queue.\nThe depth of the complete state graph search is 37.\n";
+        let r = read(out);
+        assert_eq!((r.states, r.depth), (Some(892402), Some(37)));
     }
 
     #[test]

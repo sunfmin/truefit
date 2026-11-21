@@ -69,10 +69,29 @@ pub struct Standin {
     normalise: Vec<Normalise>,
     #[serde(default)]
     case: Vec<Case>,
+    /// The failures it can answer, each held by a case whose `fault` names it.
+    #[serde(default)]
+    pub faults: Vec<String>,
+    /// The variable that tells the stand-in which fault to answer.
+    #[serde(default = "default_fault_env")]
+    fault_env: String,
+    /// Why it answers no fault, kept while the stand-in is the one hashed.
+    pub no_faults: Option<NoFaults>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoFaults {
+    pub why: String,
+    pub sha256: String,
 }
 
 fn default_compare() -> Vec<String> {
     vec!["exit".into(), "stdout".into()]
+}
+
+fn default_fault_env() -> String {
+    "TRUEFIT_FAULT".into()
 }
 
 #[derive(Deserialize)]
@@ -96,6 +115,13 @@ struct Case {
     dir: Option<String>,
     #[serde(default)]
     files: Vec<String>,
+    /// The fault it holds: the stand-in runs told to answer it.
+    fault: Option<String>,
+    /// Must succeed for the real side to run it; else it is not run, with `needs`.
+    #[serde(default)]
+    ready: Vec<String>,
+    #[serde(default)]
+    needs: String,
 }
 
 /// What one side answered to one case, after normalisation.
@@ -215,6 +241,33 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
         if s.case.is_empty() {
             faults.push(fault(format!("stand-in `{n}` has no case"), format!("declare its contract as [[standin.case]] entries: every answer of `{}` the system reads", s.real.first().map_or("", |r| r))));
         }
+        for f in s
+            .faults
+            .iter()
+            .filter(|f| !s.case.iter().any(|c| c.fault.as_ref() == Some(f)))
+        {
+            faults.push(fault(
+                format!("stand-in `{n}` declares fault `{f}` that no case holds"),
+                format!("declare a [[standin.case]] with fault = \"{f}\" whose real side fails as `{}` does", s.real.first().map_or("", |r| r)),
+            ));
+        }
+        for (c, f) in s
+            .case
+            .iter()
+            .filter_map(|c| Some((&c.name, c.fault.as_ref()?)))
+            .filter(|(_, f)| !s.faults.contains(f))
+        {
+            faults.push(fault(
+                format!("stand-in `{n}`: case `{c}` holds fault `{f}`, not in its `faults`"),
+                format!("add \"{f}\" to its faults, or name one that is"),
+            ));
+        }
+        if s.no_faults.is_some() && !s.faults.is_empty() {
+            faults.push(fault(
+                format!("stand-in `{n}` declares faults and no_faults"),
+                "drop no_faults: it declares faults",
+            ));
+        }
         for p in s.compare.iter().filter(|p| !PARTS.contains(&p.as_str())) {
             faults.push(fault(
                 format!("stand-in `{n}` compares `{p}`"),
@@ -247,13 +300,15 @@ fn check_standin(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) 
     let cases: Vec<Value> = s
         .case
         .iter()
-        .map(|c| match answer(root, &s.run, c, rules) {
-            Ok(_) => json!({"case": c.name, "result": "ran"}),
-            Err(e) => {
-                ok = false;
-                json!({"case": c.name, "result": "cannot run", "fault": e})
-            }
-        })
+        .map(
+            |c| match answer(root, &s.run, c, rules, Some(&s.fault_env)) {
+                Ok(_) => json!({"case": c.name, "result": "ran"}),
+                Err(e) => {
+                    ok = false;
+                    json!({"case": c.name, "result": "cannot run", "fault": e})
+                }
+            },
+        )
         .collect();
     json!({"name": s.name, "result": if ok { "pass" } else { "fail" }, "cases": cases,
            "real_run": read(root, &record_file(&s.name))})
@@ -270,16 +325,28 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     if find(root, &s.real[0]).is_none() {
         return not_run(format!("`{}` is not found here", s.real[0]));
     }
-    if !s.ready.is_empty() && !matches!(quiet(root, &s.ready), Some(o) if o.status.success()) {
+    if !ready(root, &s.ready) {
         return not_run(format!("`{}` did not succeed", s.ready.join(" ")));
     }
     let mut ok = true;
     let mut cases = Vec::new();
     let mut differing = Vec::new();
+    let mut unrun = Vec::new();
     for c in &s.case {
+        if !ready(root, &c.ready) {
+            let why = format!("`{}` did not succeed", c.ready.join(" "));
+            let needs = if c.needs.is_empty() {
+                why.clone()
+            } else {
+                c.needs.clone()
+            };
+            cases.push(json!({"case": c.name, "result": "not run", "why": why, "needs": needs}));
+            unrun.push(needs);
+            continue;
+        }
         let (stand, real) = (
-            answer(root, &s.run, c, rules),
-            answer(root, &s.real, c, rules),
+            answer(root, &s.run, c, rules, Some(&s.fault_env)),
+            answer(root, &s.real, c, rules, None),
         );
         let case = match (stand, real) {
             (Ok(a), Ok(b)) => {
@@ -302,6 +369,12 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     }
     let mut report =
         json!({"name": s.name, "result": if ok { "pass" } else { "fail" }, "cases": cases});
+    // A case not run here is never a pass: the run is not run, and records nothing.
+    if ok && !unrun.is_empty() {
+        report["result"] = "not run".into();
+        report["needs"] = unrun.join("; ").into();
+        ok = false;
+    }
     let record = json!({"date": today(), "version": version(root, s)});
     // The last real run's differing cases, kept until a real run finds none.
     let differ = differ_file(&s.name);
@@ -332,6 +405,22 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
         report["real_run"] = record;
     }
     report
+}
+
+/// Why every test through `s` can only succeed, with its stand-in's SHA-256
+/// now; None when it declares faults, or `no_faults` for it as it is now.
+pub fn without_faults(root: &Path, s: &Standin) -> Option<(&'static str, Option<String>)> {
+    let sha = find(root, &s.run[0]).and_then(|p| crate::model::sha256(&p));
+    let kept = s.no_faults.as_ref();
+    if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
+        return None;
+    }
+    let why = if kept.is_some() {
+        "the stand-in changed since it was marked as answering no fault"
+    } else {
+        "it declares no fault: every test through it can only succeed"
+    };
+    Some((why, sha))
 }
 
 /// Where a stand-in's last passing real run is kept: its date and version.
@@ -419,6 +508,11 @@ pub fn find(root: &Path, program: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// Whether `argv` is empty or succeeds here: a real run (or one case of it) may go ahead.
+fn ready(root: &Path, argv: &[String]) -> bool {
+    argv.is_empty() || matches!(quiet(root, argv), Some(o) if o.status.success())
+}
+
 fn quiet(root: &Path, argv: &[String]) -> Option<std::process::Output> {
     Command::new(find(root, &argv[0])?)
         .args(&argv[1..])
@@ -435,6 +529,8 @@ fn answer(
     prefix: &[String],
     c: &Case,
     rules: &[(regex_lite::Regex, &str)],
+    // The variable that tells the stand-in a case's fault; None on the real side.
+    fault_env: Option<&str>,
 ) -> Result<Answer, String> {
     let program = find(root, &prefix[0]).ok_or_else(|| format!("`{}` is not found", prefix[0]))?;
     let work = scratch()?;
@@ -447,6 +543,7 @@ fn answer(
             .args(&prefix[1..])
             .args(&c.args)
             .envs(&c.env)
+            .envs(fault_env.zip(c.fault.as_deref()))
             .current_dir(&work)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
