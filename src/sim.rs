@@ -358,20 +358,22 @@ fn kept(root: &Path, seed: &str) -> Option<Value> {
     Some(contract::read(root, &file(seed))).filter(|k| !k.is_null())
 }
 
-/// Every kept seed, by name.
+/// Every kept seed, by name; a file in .truefit/seeds/ that is no record is none.
 fn all_kept(root: &Path) -> Vec<(String, Value)> {
     let mut names: Vec<String> = std::fs::read_dir(root.join(SEEDS))
         .into_iter()
         .flatten()
-        .filter_map(|e| {
-            e.ok()?
-                .file_name()
-                .to_str()?
-                .strip_suffix(".json")
-                .map(String::from)
+        .flatten()
+        .map(|e| {
+            e.path()
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
         })
         .collect();
     names.sort();
+    names.dedup();
     names
         .into_iter()
         .filter_map(|s| Some((s.clone(), kept(root, &s)?)))
