@@ -282,18 +282,20 @@ name = "c"
 fn a_real_run_whose_record_cannot_be_written_fails() {
     let dir = config(
         "unwritable",
-        "[[standin]]\nname = \"e\"\nrun = [\"/bin/echo\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\nargs = [\"hi\"]\n",
+        "[[standin]]\nname = \"e\"\nrun = [\"/bin/echo\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\nargs = [\"hi\"]\n\
+         [[standin]]\nname = \"d\"\nrun = [\"/bin/echo\", \"x\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\n",
     );
     std::fs::write(dir.join(".truefit"), "a file, not a directory").unwrap();
     let (code, out) = truefit_in(&dir, &["contract", "--real"]);
     assert_eq!(code, Some(1), "{out:#}");
-    assert_eq!(out["standins"][0]["result"], "fail");
-    assert!(
-        out["standins"][0]["fault"]
-            .as_str()
-            .unwrap()
-            .contains(".truefit/e.json")
-    );
+    for (i, file) in [".truefit/e.json", ".truefit/d.differ.json"]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(out["standins"][i]["result"], "fail");
+        let fault = out["standins"][i]["fault"].as_str().unwrap();
+        assert!(fault.contains(file), "{out:#}");
+    }
 }
 
 #[test]

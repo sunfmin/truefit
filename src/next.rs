@@ -130,14 +130,10 @@ fn differing(s: &Standin, run: Value) -> Value {
         .flatten()
         .filter_map(|c| c["case"].as_str())
         .collect();
-    let mut files = vec![file.clone()];
-    if s.run[0].contains('/') {
-        files.insert(0, s.run[0].clone());
-    }
     json!({
         "kind": "differing-case",
         "summary": format!("stand-in {} answers unlike `{}` in {}", s.name, s.real[0], cases.join(", ")),
-        "files": files,
+        "files": [s.run[0], file],
         "evidence": {"standin": s.name, "real_run": run},
         "steps": format!("For each case in the evidence, read which parts `differ` and both answers (`standin`, `real`). Fix the stand-in `{}` so it answers as `{}` does: the real program is right. Do not change the case, and add a normalise rule only for what differs from run to run (dates, paths, ids), never for what the system reads. Run the accept command; when every case agrees it removes {file}: commit .truefit/.", s.run[0], s.real[0]),
         "accept": format!("truefit contract --real {}", s.name),
