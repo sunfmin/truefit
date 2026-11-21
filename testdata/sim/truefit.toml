@@ -1,0 +1,5 @@
+# The sample: a small queue simulated from a seed, with a bug some seeds reach.
+
+[sim]
+run = ["./sim"] # truefit appends the seed
+seeds = 20      # new seeds per `truefit sim` (the default)

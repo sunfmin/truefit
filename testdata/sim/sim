@@ -1,0 +1,3 @@
+#!/bin/sh
+# The sample's simulation: `./sim <seed>` runs the queue (queue.awk) from it.
+exec awk -v seed="$1" -f "$(dirname "$0")/queue.awk"

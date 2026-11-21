@@ -3,6 +3,7 @@
 
 mod contract;
 mod next;
+mod sim;
 
 use serde_json::json;
 use std::process::ExitCode;
@@ -18,6 +19,9 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if let ["contract", rest @ ..] = args.as_slice() {
         return contract(rest);
+    }
+    if let ["sim", rest @ ..] = args.as_slice() {
+        return sim(rest);
     }
     if let ["next", rest @ ..] = args.as_slice() {
         let all = match rest {
@@ -70,6 +74,28 @@ fn contract(rest: &[&str]) -> ExitCode {
     };
     let root = std::env::current_dir().unwrap_or_default();
     print(real.and_then(|real| contract::run(&root, real)))
+}
+
+/// `truefit sim [--seeds N | --budget <seconds> | --seed <s> | --forget <s> --why <reason>]`.
+fn sim(rest: &[&str]) -> ExitCode {
+    let ask = match rest {
+        [] => Some(sim::Ask::Run(None)),
+        ["--seeds", n] => n.parse().ok().map(|n| sim::Ask::Run(Some(sim::New::Seeds(n)))),
+        ["--budget", s] => std::time::Duration::try_from_secs_f64(s.parse().unwrap_or(-1.0))
+            .ok()
+            .map(|d| sim::Ask::Run(Some(sim::New::Budget(d)))),
+        ["--seed", seed] => Some(sim::Ask::Seed(seed)),
+        ["--forget", seed, "--why", why] => Some(sim::Ask::Forget(seed, why)),
+        _ => None,
+    }
+    .ok_or_else(|| {
+        vec![contract::fault(
+            format!("`truefit sim {}` is not a sim command", rest.join(" ")),
+            "run `truefit sim [--seeds N | --budget <seconds>]`, `truefit sim --seed <s>` or `truefit sim --forget <s> --why <reason>`",
+        )]
+    });
+    let root = std::env::current_dir().unwrap_or_default();
+    print(ask.and_then(|ask| sim::run(&root, ask)))
 }
 
 /// Prints a command's answer: exit 0 when it passed, 1 when not, 2 on faults.

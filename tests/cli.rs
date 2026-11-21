@@ -433,3 +433,318 @@ fn next_without_declared_stand_in_places_says_so() {
             .contains("[contract] standins")
     );
 }
+
+fn kept_seeds(dir: &Path) -> Vec<String> {
+    let mut seeds: Vec<String> = std::fs::read_dir(dir.join(".truefit/seeds"))
+        .into_iter()
+        .flatten()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    seeds.sort();
+    seeds
+}
+
+fn failing(out: &Value) -> Vec<Value> {
+    out["new"]["failing"].as_array().unwrap().clone()
+}
+
+#[test]
+fn sim_finds_the_sample_bug_keeps_its_seed_and_reruns_it_step_for_step() {
+    let dir = sample("sim", "sim");
+    let (code, out) = truefit_in(&dir, &["sim", "--seeds", "10"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["new"]["ran"], 10);
+    let found = failing(&out);
+    assert_eq!(out["new"]["passed"], 10 - found.len(), "{out:#}");
+    assert!(
+        !found.is_empty(),
+        "three in four of the sample's seeds fail"
+    );
+    let seed = found[0]["seed"].as_str().unwrap();
+    for f in &found {
+        assert_eq!(f["result"], "fails", "{f:#}");
+        assert_eq!(f["verdict"]["invariant"], "applied-once");
+        assert_eq!(f["steps"], f["verdict"]["step"]);
+    }
+    assert_eq!(kept_seeds(&dir).len(), found.len());
+    assert_eq!(found[0]["rerun"], format!("truefit sim --seed {seed}"));
+    let file = dir.join(format!(".truefit/seeds/{seed}.json"));
+    let record = std::fs::read(&file).unwrap();
+    let kept: Value = serde_json::from_slice(&record).unwrap();
+    assert_eq!(kept["verdict"], found[0]["verdict"]);
+    assert!(kept["nondeterministic"].is_null());
+
+    // Rerun: step for step as kept, so the record is untouched.
+    let (code, again) = truefit_in(&dir, &["sim", "--seed", seed]);
+    assert_eq!(code, Some(1), "{again:#}");
+    assert_eq!(again["seed"]["result"], "fails");
+    assert!(again["seed"].get("changed").is_none() && again["seed"].get("differs").is_none());
+    assert_eq!(std::fs::read(&file).unwrap(), record);
+    assert!(again["next"].as_str().unwrap().starts_with("fix the bug"));
+    let (_, next) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(next["counts"]["failing-seed"], found.len(), "{next:#}");
+    let task = &next["tasks"][0];
+    assert_eq!(
+        task["accept"],
+        format!(
+            "truefit sim --seed {}",
+            kept_seeds(&dir)[0].trim_end_matches(".json")
+        )
+    );
+    assert!(
+        task["summary"]
+            .as_str()
+            .unwrap()
+            .contains("invariant applied-once at step")
+    );
+    let (code, refused) = truefit_in(&dir, &["sim", "--forget", seed, "--why", "x"]);
+    assert_eq!(code, Some(2), "a failing seed stays: {refused:#}");
+
+    // Fixed: every kept seed reruns first, passes, and its new steps are kept.
+    let queue = dir.join("queue.awk");
+    let fixed = std::fs::read_to_string(&queue).unwrap().replace(
+        "if (!(m in done)) applied[m]++",
+        "if (!(m in done)) { applied[m]++; done[m] = 1 }",
+    );
+    std::fs::write(&queue, fixed).unwrap();
+    let (code, out) = truefit_in(&dir, &["sim", "--seeds", "0"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["new"]["ran"], 0);
+    let kept = out["kept"].as_array().unwrap();
+    assert_eq!(kept.len(), found.len());
+    assert!(
+        kept.iter()
+            .all(|k| k["result"] == "passes" && k["changed"]["line"].is_u64()),
+        "{out:#}"
+    );
+    let (_, next) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(next["counts"], serde_json::json!({}), "{next:#}");
+    let (code, out) = truefit_in(&dir, &["sim", "--seed", seed]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(out["seed"].get("changed").is_none());
+    let (code, _) = truefit_in(&dir, &["sim", "--forget", seed, "--why", " "]);
+    assert_eq!(code, Some(2), "a reason is needed");
+    let (code, out) = truefit_in(&dir, &["sim", "--forget", seed, "--why", "fixed"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("forget seed {seed}: fixed"))
+    );
+    assert!(!file.exists());
+    let (code, out) = truefit_in(&dir, &["sim", "--forget", seed, "--why", "fixed"]);
+    assert_eq!(code, Some(2), "{out:#}");
+}
+
+#[test]
+fn sim_catches_a_nondeterministic_simulation_at_the_first_step_that_differs() {
+    let dir = sample("sim", "nondet");
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    std::fs::write(
+        dir.join("truefit.toml"),
+        toml.replace("\"./sim\"", "\"./sim-nondeterministic\""),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["sim", "--seeds", "10"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let found = failing(&out);
+    assert!(!found.is_empty());
+    for f in &found {
+        assert_eq!(f["result"], "nondeterministic", "{f:#}");
+        let d = &f["differs"];
+        assert_ne!(
+            d["then"]["state"]["worker"], d["now"]["state"]["worker"],
+            "{f:#}"
+        );
+        assert_eq!(d["then"]["event"], d["now"]["event"]);
+    }
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .starts_with("make the simulation deterministic")
+    );
+    let (_, next) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(
+        next["counts"],
+        serde_json::json!({"nondeterministic-sim": 1}),
+        "{next:#}"
+    );
+    assert_eq!(
+        next["tasks"][0]["evidence"]["seeds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        found.len()
+    );
+    let seed = found[0]["seed"].as_str().unwrap();
+    let (code, out) = truefit_in(&dir, &["sim", "--seed", seed]);
+    assert_eq!(code, Some(1));
+    assert_eq!(out["seed"]["result"], "nondeterministic", "{out:#}");
+
+    // Deterministic again: two reruns agree, so the flag clears and the bug remains.
+    std::fs::write(dir.join("truefit.toml"), toml).unwrap();
+    let (code, out) = truefit_in(&dir, &["sim", "--seeds", "0"]);
+    assert_eq!(code, Some(1));
+    assert!(
+        out["kept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|k| k["result"] == "fails" && k.get("differs").is_none()),
+        "{out:#}"
+    );
+    let (_, next) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(
+        next["counts"],
+        serde_json::json!({"failing-seed": found.len()}),
+        "{next:#}"
+    );
+}
+
+#[test]
+fn sim_runs_new_seeds_by_count_or_budget_and_stops_at_a_run_without_a_verdict() {
+    let dir = config(
+        "sim-script",
+        "[sim]\nrun = [\"./s\", \"--seed\"]\nseeds = 3\n",
+    );
+    let script = dir.join("s");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\n[ \"$1\" = --seed ] || exit 9\necho '{\"step\":1}'\ncat verdict\n",
+    )
+    .unwrap();
+    Command::new("chmod")
+        .arg("+x")
+        .arg(&script)
+        .status()
+        .unwrap();
+    let verdict = |v: &str| std::fs::write(dir.join("verdict"), v).unwrap();
+    verdict("{\"verdict\":\"pass\"}\n");
+    let (code, out) = truefit_in(&dir, &["sim"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(
+        out["new"],
+        serde_json::json!({"ran": 3, "passed": 3, "failing": []})
+    );
+    assert!(out["next"].as_str().unwrap().starts_with("nothing"));
+    let (_, out) = truefit_in(&dir, &["sim", "--budget", "0"]);
+    assert_eq!(out["new"]["ran"], 1, "a budget runs at least one seed");
+    let (code, out) = truefit_in(&dir, &["sim", "--seed", "a-1_B"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["seed"]["result"], "passes");
+    assert_eq!(out["seed"]["steps"], 1);
+    assert!(kept_seeds(&dir).is_empty(), "a passing seed is not kept");
+
+    verdict("{\"verdict\":\"fail\",\"invariant\":\"x\",\"step\":1}\n");
+    let (code, out) = truefit_in(&dir, &["sim", "--seed", "k"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(kept_seeds(&dir), ["k.json"]);
+    verdict("boom\n");
+    for args in [&["sim", "--seed", "k"][..], &["sim", "--seed", "new"]] {
+        let (code, out) = truefit_in(&dir, args);
+        assert_eq!(code, Some(1), "{out:#}");
+        assert_eq!(out["seed"]["result"], "broken", "{out:#}");
+        assert_eq!(out["seed"]["last_line"], "boom");
+        assert!(
+            out["next"]
+                .as_str()
+                .unwrap()
+                .starts_with("make the simulation end every run")
+        );
+    }
+    let (code, out) = truefit_in(&dir, &["sim", "--seeds", "5"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["kept"][0]["result"], "broken");
+    assert_eq!(
+        out["new"]["ran"], 1,
+        "a broken run stops new seeds: {out:#}"
+    );
+    assert_eq!(kept_seeds(&dir), ["k.json"]);
+
+    // A kept seed that passes again stays kept; forgotten only while it can be removed.
+    verdict("{\"verdict\":\"pass\"}\n");
+    truefit_in(&dir, &["sim", "--seeds", "0"]);
+    let seeds = dir.join(".truefit/seeds");
+    Command::new("chmod")
+        .arg("555")
+        .arg(&seeds)
+        .status()
+        .unwrap();
+    let (code, out) = truefit_in(&dir, &["sim", "--forget", "k", "--why", "w"]);
+    Command::new("chmod")
+        .arg("755")
+        .arg(&seeds)
+        .status()
+        .unwrap();
+    assert_eq!(code, Some(2), "{out:#}");
+    assert!(
+        out["error"][0]["fault"]
+            .as_str()
+            .unwrap()
+            .starts_with("cannot remove")
+    );
+    assert_eq!(kept_seeds(&dir), ["k.json"]);
+}
+
+#[test]
+fn sim_faults_exit_2() {
+    let unwritable = config(
+        "sim-unwritable",
+        "[sim]\nrun = [\"/bin/sh\", \"-c\", \"echo '{\\\"verdict\\\":\\\"fail\\\"}'\"]\n",
+    );
+    std::fs::write(unwritable.join(".truefit"), "a file, not a directory").unwrap();
+    let sim = config("sim-args", "[sim]\nrun = [\"/bin/echo\"]\n");
+    for (dir, args, says) in [
+        (config("sim-none", ""), vec!["sim"], "no [sim]"),
+        (
+            config("sim-empty", "[sim]\nrun = []\n"),
+            vec!["sim"],
+            "[sim] run is empty",
+        ),
+        (
+            config("sim-missing", "[sim]\nrun = [\"./nope\"]\n"),
+            vec!["sim"],
+            "not found",
+        ),
+        (
+            config("sim-plain-file", "[sim]\nrun = [\"./truefit.toml\"]\n"),
+            vec!["sim"],
+            "cannot run",
+        ),
+        (
+            unwritable,
+            vec!["sim", "--seed", "1"],
+            "cannot write .truefit/seeds/1.json",
+        ),
+        (sim.clone(), vec!["sim", "--seed", "a/b"], "is not a seed"),
+        (
+            sim.clone(),
+            vec!["sim", "--forget", "", "--why", "w"],
+            "is not a seed",
+        ),
+        (
+            sim.clone(),
+            vec!["sim", "--forget", "x", "--why", "w"],
+            "is not kept",
+        ),
+        (
+            sim.clone(),
+            vec!["sim", "--seeds", "many"],
+            "not a sim command",
+        ),
+        (
+            sim.clone(),
+            vec!["sim", "--budget", "-1"],
+            "not a sim command",
+        ),
+        (sim, vec!["sim", "--frob"], "not a sim command"),
+    ] {
+        let (code, out) = truefit_in(&dir, &args);
+        assert_eq!(code, Some(2), "{args:?}: {out:#}");
+        let fault = out["error"][0]["fault"].as_str().unwrap();
+        assert!(fault.contains(says), "{args:?}: {out:#}");
+        assert!(out["error"][0]["fix"].is_string());
+    }
+}

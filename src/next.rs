@@ -42,6 +42,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
             tasks.push(differing(s, differ));
         }
     }
+    tasks.extend(crate::sim::tasks(root));
     let mut counts = serde_json::Map::new();
     for t in &tasks {
         let n = counts
@@ -51,7 +52,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     }
     let next = match (tasks.is_empty(), all) {
         (true, _) => {
-            "nothing: every declared stand-in's contract is fresh, and none is without one"
+            "nothing: every declared stand-in's contract is fresh, none is without one, and no kept seed fails"
         }
         (false, true) => "do each task by its steps, then run its accept command and commit",
         (false, false) => "do the task by its steps, then run its accept command and commit",

@@ -18,6 +18,8 @@ pub struct Config {
     pub contract: Settings,
     #[serde(default)]
     pub standin: Vec<Standin>,
+    #[serde(default)]
+    pub sim: Option<crate::sim::Sim>,
 }
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
@@ -183,6 +185,12 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
         )]
     })?;
     let mut faults = Vec::new();
+    if config.sim.as_ref().is_some_and(|s| s.run.is_empty()) {
+        faults.push(fault(
+            "[sim] run is empty",
+            "declare the command that runs the simulation from a seed, e.g. run = [\"tests/sim\"]",
+        ));
+    }
     for (i, s) in config.standin.iter().enumerate() {
         let n = &s.name;
         if config.standin[..i].iter().any(|t| &t.name == n) {
