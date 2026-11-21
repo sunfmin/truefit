@@ -2,6 +2,7 @@
 //! `truefit --help` is the manual, and its only copy.
 
 mod contract;
+mod model;
 mod next;
 mod sim;
 
@@ -22,6 +23,9 @@ fn main() -> ExitCode {
     }
     if let ["sim", rest @ ..] = args.as_slice() {
         return sim(rest);
+    }
+    if let ["model", rest @ ..] = args.as_slice() {
+        return model(rest);
     }
     if let ["next", rest @ ..] = args.as_slice() {
         let all = match rest {
@@ -96,6 +100,25 @@ fn sim(rest: &[&str]) -> ExitCode {
     });
     let root = std::env::current_dir().unwrap_or_default();
     print(ask.and_then(|ask| sim::run(&root, ask)))
+}
+
+/// `truefit model [<name>] [--trace <file>]`.
+fn model(rest: &[&str]) -> ExitCode {
+    let ask = match rest {
+        [] => Some((None, None)),
+        ["--trace", file] => Some((None, Some(*file))),
+        [name] if !name.starts_with('-') => Some((Some(*name), None)),
+        [name, "--trace", file] if !name.starts_with('-') => Some((Some(*name), Some(*file))),
+        _ => None,
+    }
+    .ok_or_else(|| {
+        vec![contract::fault(
+            format!("`truefit model {}` is not a model command", rest.join(" ")),
+            "run `truefit model [<name>]` or `truefit model [<name>] --trace <file>`",
+        )]
+    });
+    let root = std::env::current_dir().unwrap_or_default();
+    print(ask.and_then(|(name, trace)| model::run(&root, name, trace)))
 }
 
 /// Prints a command's answer: exit 0 when it passed, 1 when not, 2 on faults.

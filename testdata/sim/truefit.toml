@@ -3,3 +3,24 @@
 [sim]
 run = ["./sim"] # truefit appends the seed
 seeds = 20      # new seeds per `truefit sim` (the default)
+
+# The queue's design, model-checked by TLC; the simulation's runs are its
+# traces: `./sim 1 > run.jsonl; truefit model --trace run.jsonl`.
+[[model]]
+name = "queue"
+spec = "Queue.tla"
+config = "Queue.cfg"
+limit = 60 # seconds TLC may take on it
+# The coverage record: the code each action stands for, as of `commit`.
+commit = "42a65a58620cc50dc65af3c1ed5884a887984259"
+covers = [
+  { action = "ApplyAck", file = "queue.awk", function = "BEGIN: the step's \"apply m, ack\" branch" },
+  { action = "ApplyCrash", file = "queue.awk", function = "BEGIN: the step's \"apply m, crash\" branch" },
+  { action = "AppliedOnce", file = "queue.awk", function = "applied_once" },
+]
+
+# Each record's fields, as the model's variables (`r` is the record);
+# `done` is left free: TLC tries every value the model allows.
+[model.trace]
+applied = "r.state.applied"
+head = "r.state.next"

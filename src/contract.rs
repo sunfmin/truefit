@@ -20,6 +20,8 @@ pub struct Config {
     pub standin: Vec<Standin>,
     #[serde(default)]
     pub sim: Option<crate::sim::Sim>,
+    #[serde(default)]
+    pub model: Vec<crate::model::Model>,
 }
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
@@ -184,7 +186,7 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
             format!("correct {CONFIG} as `truefit --help` declares it"),
         )]
     })?;
-    let mut faults = Vec::new();
+    let mut faults = crate::model::faults(&config.model);
     if config.sim.as_ref().is_some_and(|s| s.run.is_empty()) {
         faults.push(fault(
             "[sim] run is empty",
