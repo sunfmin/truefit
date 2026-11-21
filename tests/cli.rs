@@ -1426,7 +1426,7 @@ fn a_promise_of_what_runs_at_once_needs_sim_and_model_or_a_reason() {
 
 #[test]
 fn a_candidate_marked_a_promise_fails_until_registered_and_readmes_are_read_by_default() {
-    let toml = "[[standin]]\nname = \"git\"\nrun = [\"true\"]\nreal = [\"true\"]\n[[standin.case]]\nname = \"c\"\n";
+    let toml = "[[standin]]\nname = \"git\"\nrun = [\"true\"]\nreal = [\"true\"]\nfaults = [\"gone\"]\n[[standin.case]]\nname = \"c\"\nfault = \"gone\"\n";
     let dir = config("promise-default", toml);
     std::fs::write(dir.join("README.md"), "A ref is never moved backwards.\n").unwrap();
     let (code, out) = truefit_in(&dir, &["promise"]);
@@ -1462,4 +1462,39 @@ fn promise_faults_exit_2() {
     assert_eq!(out["error"].as_array().unwrap().len(), 6, "{out:#}");
     let (code, _) = truefit_in(&dir, &["promise", "--frob"]);
     assert_eq!(code, Some(2));
+}
+
+#[test]
+fn a_promise_kept_by_a_contract_whose_stand_in_declares_no_fault_is_unreached() {
+    let dir = config(
+        "promise-no-fault",
+        r#"[promises]
+sources = []
+[[promise]]
+name = "saved"
+says = "A token issued is never dropped."
+source = "SPEC.md:1"
+check = ["contract e"]
+[[standin]]
+name = "e"
+run = ["/bin/echo"]
+real = ["echo"]
+[[standin.case]]
+name = "c"
+"#,
+    );
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(statuses(&out), [("saved", "unreached")]);
+    let why = out["promises"][0]["why"].as_str().unwrap();
+    assert!(why.contains("stand-in e: it declares no fault"), "{why}");
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let with_fault = toml.replace(
+        "real = [\"echo\"]\n",
+        "real = [\"echo\"]\nfaults = [\"gone\"]\n",
+    ) + "fault = \"gone\"\n";
+    std::fs::write(dir.join("truefit.toml"), with_fault).unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(statuses(&out), [("saved", "checked")], "{out:#}");
+    assert_eq!(code, Some(0), "{out:#}");
 }

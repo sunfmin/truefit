@@ -407,6 +407,22 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     report
 }
 
+/// Why every test through `s` can only succeed, with its stand-in's SHA-256
+/// now; None when it declares faults, or `no_faults` for it as it is now.
+pub fn without_faults(root: &Path, s: &Standin) -> Option<(&'static str, Option<String>)> {
+    let sha = find(root, &s.run[0]).and_then(|p| crate::model::sha256(&p));
+    let kept = s.no_faults.as_ref();
+    if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
+        return None;
+    }
+    let why = if kept.is_some() {
+        "the stand-in changed since it was marked as answering no fault"
+    } else {
+        "it declares no fault: every test through it can only succeed"
+    };
+    Some((why, sha))
+}
+
 /// Where a stand-in's last passing real run is kept: its date and version.
 pub fn record_file(name: &str) -> String {
     format!(".truefit/{name}.json")

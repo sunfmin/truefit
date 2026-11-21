@@ -131,16 +131,8 @@ fn stale(root: &Path, s: &Standin, today: u64, fresh_days: u64) -> Option<Value>
 /// A `standin-without-faults` task, if `s` declares no fault and no
 /// `no_faults` kept for the stand-in as it is now.
 fn without_faults(root: &Path, s: &Standin) -> Option<Value> {
-    let sha = contract::find(root, &s.run[0]).and_then(|p| crate::model::sha256(&p));
+    let (why, sha) = contract::without_faults(root, s)?;
     let kept = s.no_faults.as_ref();
-    if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
-        return None;
-    }
-    let why = if kept.is_some() {
-        "the stand-in changed since it was marked as answering no fault"
-    } else {
-        "it declares no fault: every test through it can only succeed"
-    };
     Some(json!({
         "kind": "standin-without-faults",
         "summary": format!("stand-in {}: {why}", s.name),

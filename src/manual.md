@@ -378,8 +378,10 @@ A check is reached, or the promise is `unreached`:
   older than `[contract] fresh_days`) named the promise in its `checked`.
 - `model <name>`: that model's config checks an invariant (or property) of
   the promise's name.
-- `test`, `contract <stand-in>`: declared; truefit cannot see a test reach
-  it, and a contract's freshness is `truefit contract`'s.
+- `contract <stand-in>`: the stand-in declares a fault (or `no_faults` for
+  it as it is now): through one that can only succeed, no test reaches the
+  failures a promise is about. Its freshness is `truefit contract`'s.
+- `test`: declared; truefit cannot see a test reach it.
 
 Names are compared without case and punctuation: `applied-once` is the
 model's `AppliedOnce`.
