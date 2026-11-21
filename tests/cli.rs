@@ -1031,6 +1031,18 @@ fn a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks
         out["promises"][0]["why"].as_str().unwrap().to_string()
     };
     assert!(why(&dir).contains("no reject trace it disallows that breaks `applied-once`"));
+    // A reject trace that breaks another invariant (TypeOK: a head past N + 1) backs not this promise.
+    let reject = dir.join(".truefit/traces/queue/reject");
+    std::fs::create_dir_all(&reject).unwrap();
+    std::fs::write(
+        reject.join("head.jsonl"),
+        r#"{"step":1,"state":{"applied":[0,0,0],"next":9}}"#,
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["models"][0]["traces"]["reject"][0]["breaks"], "TypeOK");
+    assert!(why(&dir).contains("no reject trace it disallows that breaks `applied-once`"));
     // A record of other inputs backs nothing.
     std::fs::write(dir.join("Queue.tla"), spec + "\\* a change\n").unwrap();
     assert!(why(&dir).contains("changed since its last `truefit model`"));
@@ -1278,6 +1290,10 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
     assert_eq!(code, Some(0));
     let (code, out) = truefit_in(&dir, &["promise"]);
     assert_eq!(code, Some(1));
+    assert!(
+        !out["next"].as_str().unwrap().contains("unbacked"),
+        "{out:#}"
+    );
     let want = [
         ("applied-once", "checked"),
         ("no-lost-message", "unreached"),
