@@ -15,42 +15,11 @@ pub const MARKS: &str = ".truefit/promises.json";
 const LADDER: [&str; 4] = ["test", "contract", "sim", "model"];
 
 /// The words a sentence that makes a promise reads with.
-const WORDS: [&str; 7] = [
-    "never",
-    "always",
-    "at most",
-    "exactly once",
-    "only",
-    "within",
-    "every",
-];
+const WORDS: &str = "never, always, at most, exactly once, only, within, every";
 
 /// The words of a promise about what runs at once or in an order the system
 /// does not choose: one that needs both `sim` and `model`.
-const CONCURRENT: [&str; 22] = [
-    "at once",
-    "concurrent",
-    "concurrently",
-    "in parallel",
-    "simultaneous",
-    "race",
-    "out of order",
-    "reorder",
-    "crash",
-    "crashes",
-    "restart",
-    "retry",
-    "retries",
-    "lease",
-    "queue",
-    "lost",
-    "twice",
-    "deliver",
-    "delivered",
-    "redelivered",
-    "exactly once",
-    "at least once",
-];
+const CONCURRENT: &str = "at once, concurrent, concurrently, in parallel, simultaneous, race, out of order, reorder, crash, crashes, restart, retry, retries, lease, queue, lost, twice, deliver, delivered, redelivered, exactly once, at least once";
 
 /// `[promises]`: the files whose sentences are candidates.
 #[derive(Deserialize)]
@@ -103,7 +72,7 @@ impl Promise {
     }
 
     fn concurrent(&self) -> bool {
-        self.concurrent || has_any(&self.says, &CONCURRENT)
+        self.concurrent || has_any(&self.says, CONCURRENT)
     }
 }
 
@@ -255,8 +224,8 @@ fn sentences(root: &Path, config: &Config) -> Vec<Value> {
         for file in crate::next::expand(root, glob) {
             let text = std::fs::read_to_string(root.join(&file)).unwrap_or_default();
             for (line, s) in split(&text) {
-                if has_any(&s, &WORDS) {
-                    let rung = if has_any(&s, &CONCURRENT) {
+                if has_any(&s, WORDS) {
+                    let rung = if has_any(&s, CONCURRENT) {
                         "sim and model"
                     } else {
                         "test"
@@ -328,8 +297,8 @@ fn sentences_of(block: &[(usize, &str)], out: &mut Vec<(usize, String)>) {
     }
 }
 
-/// Whether `text` has any of `words`, each as whole words, in any case.
-fn has_any(text: &str, words: &[&str]) -> bool {
+/// Whether `text` has any of `words` (`, `-separated), each as whole words, in any case.
+fn has_any(text: &str, words: &str) -> bool {
     let words_of = |s: &str| {
         let words: Vec<String> = s
             .to_lowercase()
@@ -340,7 +309,7 @@ fn has_any(text: &str, words: &[&str]) -> bool {
         format!(" {} ", words.join(" "))
     };
     let text = words_of(text);
-    words.iter().any(|w| text.contains(&words_of(w)))
+    words.split(", ").any(|w| text.contains(&words_of(w)))
 }
 
 /// A sentence as compared: its words, without Markdown's `*` and backticks.
@@ -461,9 +430,9 @@ mod tests {
 
     #[test]
     fn words_match_whole_and_in_any_case() {
-        assert!(has_any("It is NEVER lost.", &WORDS));
-        assert!(has_any("applied exactly-once", &["exactly once"]));
-        assert!(!has_any("Nevermore, everyone.", &WORDS));
+        assert!(has_any("It is NEVER lost.", WORDS));
+        assert!(has_any("applied exactly-once", "exactly once"));
+        assert!(!has_any("Nevermore, everyone.", WORDS));
         assert!(same_name("applied-once", "AppliedOnce"));
         assert!(!same_name("applied-once", "AppliedTwice"));
     }
