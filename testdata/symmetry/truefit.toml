@@ -1,0 +1,8 @@
+# A model checked up to SYMMETRY, with more than 1,000 distinct states.
+[[model]]
+name = "counters"
+spec = "Counters.tla"
+config = "Counters.cfg"
+limit = 60
+commit = "0000000000000000000000000000000000000000"
+covers = [{ action = "Next", file = "Counters.tla", function = "Next" }]
