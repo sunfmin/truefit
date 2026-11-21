@@ -2,6 +2,7 @@
 //! `truefit --help` is the manual, and its only copy.
 
 mod contract;
+mod history;
 mod model;
 mod next;
 mod promise;
@@ -29,19 +30,23 @@ fn main() -> ExitCode {
         return model(rest);
     }
     if let ["promise", rest @ ..] = args.as_slice() {
+        let (rest, why) = match rest {
+            [r @ .., "--why", w] if !r.is_empty() => (r, Some(*w)),
+            r => (r, None),
+        };
         let marks = match rest {
-            [] => Ok(&[][..]),
+            [] if why.is_none() => Ok(&[][..]),
             ["--mark", pairs @ ..] if !pairs.is_empty() && pairs.len() % 2 == 0 => Ok(pairs),
             _ => Err(vec![contract::fault(
                 format!(
                     "`truefit promise {}` is not a promise command",
                     rest.join(" ")
                 ),
-                "run `truefit promise` or `truefit promise --mark <hash> <promise|not> [<hash> <mark>]...`",
+                "run `truefit promise` or `truefit promise --mark <hash> <promise|not> [<hash> <mark>]... [--why <reason>]`",
             )]),
         };
         let root = std::env::current_dir().unwrap_or_default();
-        return print(marks.and_then(|m| promise::run(&root, m)));
+        return print(marks.and_then(|m| promise::run(&root, m, why)));
     }
     if let ["next", rest @ ..] = args.as_slice() {
         let all = match rest {

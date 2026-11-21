@@ -1,0 +1,17 @@
+#!/bin/sh
+# Makes this directory a git repo whose history has two fixes of ledger.awk:
+# one whose subject says fix, one naming an issue (ledger#2) whose title,
+# as its landing commit gives it, says duplicate. README.md changes with
+# both, but is no code; ledger.awk also changes in a commit that is no fix.
+set -eu
+cd "$(dirname "$0")"
+git init -q
+commit() { git -c user.name=sample -c user.email=sample@example.invalid commit -q "$@"; }
+step() { printf '%s\n' "$2" >> ledger.awk; printf '%s\n' "$2" >> README.md; git add .; commit -m "$1"; }
+git add truefit.toml history
+commit -m "A ledger"
+step "Charge each order" '{ charged[$1] += $2 }'
+step "Fix a charge lost when the order id has a space" 'BEGIN { FS = "\t" }'
+step "Charge an order once, however often it is sent (ledger#2)" '!seen[$0]++ { charged[$1] += $2 }'
+commit --allow-empty -m "Land ledger#2: A charge sent twice is a duplicate"
+step "Print the totals" 'END { for (o in charged) print o, charged[o] }'

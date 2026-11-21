@@ -132,6 +132,7 @@ first, and writes it, with the date and the seeds run, to
 [sim]
 run = ["tests/sim"] # the simulation's command line; truefit appends the seed
 seeds = 20          # new seeds per `truefit sim` (default 20)
+code = ["src/queue/*.rs"] # the system's files it runs, beside `run`'s own
 ```
 
 truefit runs it from the directory holding `truefit.toml`. New seeds are
@@ -317,10 +318,12 @@ one", "within N seconds"); one no check keeps can break unseen.
   (`unregistered`); each with its `source` (file:line), `sentence`, `hash`
   and the `rung` its words point to (`test`, or `sim and model`). A
   candidate that holds a registered promise's `says` is that promise.
-- `truefit promise --mark <hash> <promise|not> [<hash> <mark>]...`: marks
-  candidates, kept in `.truefit/promises.json` by the sentence's hash, so
-  one marked is not asked again; a sentence that changes has a new hash and
-  is asked again. Commit it.
+- `truefit promise --mark <hash> <promise|not> [<hash> <mark>]...
+  [--why <reason>]`: marks candidates, kept in `.truefit/promises.json` by
+  the sentence's hash, so one marked is not asked again; a sentence that
+  changes has a new hash and is asked again. Commit it. A `fixed-often` or
+  `failing-seed-promise` task of `truefit next` is marked by its evidence's
+  `hash`, only `not`, and with its `--why`.
 
 It exits 0 when every promise is checked or kept and every candidate is
 marked and, if a promise, registered; 1 when not. It reads, never runs:
@@ -354,6 +357,7 @@ model's `AppliedOnce`.
 ```toml
 [promises]
 sources = ["SPEC.md", "README.md", "docs/adr/*.md"] # the default
+history_days = 180 # how far back `truefit next` reads fixes (the default)
 
 [[promise]]
 name = "applied-once"     # the invariant's one name: code, simulation, model
@@ -401,10 +405,31 @@ compares models' coverage with git, never running TLC.
   `unregistered`): mark each, register each promise.
 - `unchecked-promise`, `unreached-promise`: a promise `truefit promise`
   reports so, with its report as `evidence`.
+- `fixed-often`: a file of the system's code changed by two or more fixes
+  in the last `[promises] history_days`, that no registered promise's check
+  covers (a `model`'s `covers` names it; a `sim` check covers `[sim] run`'s
+  files and `code`). A fix is a commit whose subject says fix, bug, race,
+  duplicate or lost, or that names an issue (`#12`, `factum#30`) whose title
+  does, as the subject that lands it gives it (`Land factum#30: <title>`);
+  the commits of one issue are one fix. Not code: files under a directory
+  starting with `.` or named `tests`, `test` or `testdata`, and Markdown,
+  JSON, lockfiles and text. `evidence`: each fix's `commits` with their
+  subjects. Find the promise the fixes were keeping, register it, and tie
+  its check to the file; or mark the task `not` with why. It is asked
+  again when a new commit changes the file. Outside a git repo it is not
+  looked for, and `notes` says so.
+- `failing-seed-promise`: a kept failing seed whose failed invariant no
+  registered promise names: register the promise it breaks (or name the
+  invariant as the registered one), so the seed's fix is tied to it; or
+  mark it `not` with why.
 - `stale-model`: a model whose covered files (`covers`) changed since the
   `commit` its coverage record names, or whose `commit` this repo's history
   lacks: bring the model in line with the code, check it, and move `commit`
   forward. Outside a git repo it is not looked for, and `notes` says so.
+
+`testdata/history/` is a worked example of `fixed-often`: `./history` makes
+it a git repo with two fixes of `ledger.awk`, one its subject calls a fix,
+one naming an issue whose title says duplicate.
 
 The answer has the shape of `slimfit next --all`'s, so a factorium
 `[idle]` tasks line files its tasks as issues, one open issue per kind:

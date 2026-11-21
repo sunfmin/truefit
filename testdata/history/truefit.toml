@@ -1,0 +1,7 @@
+# The sample: a ledger whose history (`./history`, which makes this
+# directory a git repo) holds two fixes of ledger.awk that no registered
+# promise's check covers: `truefit next` gives it as `fixed-often`.
+
+[promises]
+sources = []      # no candidates here: the history is the evidence
+history_days = 180 # the fixes are read from this many days back (the default)

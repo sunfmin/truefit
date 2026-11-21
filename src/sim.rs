@@ -28,6 +28,9 @@ pub struct Sim {
     pub run: Vec<String>,
     #[serde(default = "default_seeds")]
     seeds: u64,
+    /// The system's files the simulation runs (globs), beside `run`'s own.
+    #[serde(default)]
+    pub code: Vec<String>,
 }
 
 fn default_seeds() -> u64 {
@@ -424,7 +427,7 @@ fn kept(root: &Path, seed: &str) -> Option<Value> {
 }
 
 /// Every kept seed, by name; a file in .truefit/seeds/ that is no record is none.
-fn all_kept(root: &Path) -> Vec<(String, Value)> {
+pub fn all_kept(root: &Path) -> Vec<(String, Value)> {
     let mut names = crate::next::entries(&root.join(SEEDS));
     names.sort();
     names

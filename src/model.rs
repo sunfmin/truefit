@@ -595,19 +595,18 @@ fn constants(config: &str) -> String {
     out.join("\n")
 }
 
+/// The files model `name`'s actions cover.
+pub fn files<'a>(models: &'a [Model], name: &str) -> Vec<&'a str> {
+    let model = models.iter().filter(|m| m.name == name);
+    model
+        .flat_map(|m| m.covers.iter().map(|c| c.file.as_str()))
+        .collect()
+}
+
 /// The `stale-model` tasks: a model whose covered files changed since the
 /// commit its coverage record names; and notes on what was not compared.
 pub fn tasks(root: &Path, models: &[Model]) -> (Vec<Value>, Vec<String>) {
-    let git = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .stderr(Stdio::null())
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-    };
+    let git = |args: &[&str]| contract::git(root, args);
     if models.is_empty() {
         return (vec![], vec![]);
     }

@@ -389,6 +389,18 @@ fn differ(compare: &[String], a: &Answer, b: &Answer) -> Vec<String> {
         .collect()
 }
 
+/// What `git <args>` prints, run in `root`, or None: it failed.
+pub fn git(root: &Path, args: &[&str]) -> Option<String> {
+    Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
 pub fn read(root: &Path, file: &str) -> Value {
     std::fs::read_to_string(root.join(file))
         .ok()
