@@ -448,13 +448,17 @@ name = "unreachable"
 fault = "gone"
 ready = ["false"]
 needs = "a network that drops"
+[[standin.case]]
+name = "unready"
+fault = "gone"
+ready = ["false"]
 "#,
     );
     let (code, out) = truefit_in(&dir, &["contract", "--real"]);
     assert_eq!(code, Some(1), "{out:#}");
     let s = &out["standins"][0];
     assert_eq!(s["result"], "not run");
-    assert_eq!(s["needs"], "a network that drops");
+    assert_eq!(s["needs"], "a network that drops; `false` did not succeed");
     assert_eq!(s["cases"][0]["result"], "agree");
     assert_eq!(s["cases"][1]["result"], "not run");
     assert!(!dir.join(".truefit/t.json").exists());
@@ -462,7 +466,7 @@ needs = "a network that drops"
     let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
     std::fs::write(
         dir.join("truefit.toml"),
-        toml.replace("ready = [\"false\"]\n", ""),
+        toml.replace("ready = [\"false\"]\nneeds", "needs"),
     )
     .unwrap();
     let (_, out) = truefit_in(&dir, &["contract", "--real"]);
