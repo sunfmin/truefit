@@ -4,4 +4,4 @@
 
 [promises]
 sources = []      # no candidates here: the history is the evidence
-history_days = 180 # the fixes are read from this many days back (the default)
+# history_days = 180: the fixes are read from this many days back (the default)

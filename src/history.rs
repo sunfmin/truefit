@@ -181,3 +181,27 @@ fn failing_seeds(root: &Path, config: &Config) -> Vec<Value> {
         })
     }).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn code_is_no_dot_or_test_directory_nor_docs_and_a_model_check_covers_its_files() {
+        assert!(code("src/a.rs") && code("a.awk"));
+        for not in [
+            "tests/a.rs",
+            "a/test/b.rs",
+            ".github/a.rs",
+            "README.md",
+            "Cargo.lock",
+        ] {
+            assert!(!code(not), "{not}");
+        }
+        let config: Config = toml::from_str(
+            "[[model]]\nname = \"m\"\nspec = \"M.tla\"\nconfig = \"M.cfg\"\ncovers = [{ action = \"A\", file = \"a.rs\", function = \"f\" }]\n[[promise]]\nname = \"p\"\nsays = \"s\"\nsource = \"x:1\"\ncheck = [\"model m\"]\n",
+        )
+        .unwrap();
+        assert_eq!(covered(Path::new("."), &config), vec!["a.rs"]);
+    }
+}

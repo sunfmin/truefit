@@ -1390,10 +1390,21 @@ fn a_file_fixed_twice_is_owed_a_promise_until_a_check_covers_it_or_it_is_marked_
         "a fix naming no issue is its own commit: {task:#}"
     );
     let hash = task["evidence"]["hash"].as_str().unwrap().to_string();
-    let (code, out) = truefit_in(&dir, &["promise", "--mark", &hash, "not"]);
-    assert_eq!(code, Some(2), "a `not` without its why: {out:#}");
-    let (code, _) = truefit_in(&dir, &["promise", "--mark", &hash, "promise", "--why", "x"]);
-    assert_eq!(code, Some(2));
+    for args in [
+        &["not"][..],
+        &["not", "--why", " "],
+        &["promise", "--why", "x"],
+    ] {
+        let mut mark = vec!["promise", "--mark", &hash];
+        mark.extend(args);
+        let (code, out) = truefit_in(&dir, &mark);
+        assert_eq!(code, Some(2), "{args:?}: {out:#}");
+        let fault = out["error"][0]["fault"].as_str().unwrap();
+        assert!(
+            fault.contains("marked only `not` with its `--why`"),
+            "{fault}"
+        );
+    }
     let (code, _) = truefit_in(
         &dir,
         &[
