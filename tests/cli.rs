@@ -944,6 +944,21 @@ fn model_sample(tag: &str, seeds: &[&str]) -> PathBuf {
     dir
 }
 
+/// truefit#13: under SYMMETRY, `states` is TLC's final count of distinct states.
+#[test]
+fn model_states_are_tlcs_distinct_states_under_symmetry() {
+    let dir = sample("symmetry", "symmetry");
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    let counters = &out["models"][0];
+    // Up to the five workers' permutations: C(14,5) = 2002 multisets of counts 0..9.
+    assert_eq!(
+        (&counters["result"], &counters["states"], &counters["depth"]),
+        (&"passes".into(), &2002.into(), &46.into()),
+        "{out:#}"
+    );
+}
+
 #[test]
 fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
     let dir = model_sample("model", &[]);

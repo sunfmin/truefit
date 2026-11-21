@@ -718,6 +718,14 @@ mod tests {
     }
 
     #[test]
+    fn states_come_from_a_final_summary_without_commas_after_a_progress_line_with_them() {
+        // TLC 1.7.4 on guild's HubLease (SYMMETRY): truefit#13.
+        let out = "Progress(21) at 2026-11-21 18:42:54: 626,801 states generated (626,801 s/min), 247,557 distinct states found (247,557 ds/min), 60,000 states left on queue.\nModel checking completed. No error has been found.\n2967722 states generated, 892402 distinct states found, 0 states left on queue.\nThe depth of the complete state graph search is 37.\n";
+        let r = read(out);
+        assert_eq!((r.states, r.depth), (Some(892402), Some(37)));
+    }
+
+    #[test]
     fn states_and_depth_come_from_tlc_final_summary_not_a_progress_line() {
         let out = "Progress(5) at 2026-11-20 10:00:00: 742 states generated (742 s/min), 742 distinct states found, 12 states left on queue.\nProgress(9) at 2026-11-20 10:01:00: 1,913 states generated (1,171 s/min), 913 distinct states found (171 ds/min), 40 states left on queue.\nModel checking completed. No error has been found.\n31,002 states generated, 29,705 distinct states found, 0 states left on queue.\nThe depth of the complete state graph search is 14.\n";
         let r = read(out);
