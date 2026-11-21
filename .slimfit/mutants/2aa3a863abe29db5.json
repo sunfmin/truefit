@@ -1,0 +1,6 @@
+{
+  "tree": "319cba4ac6dc8b0c3d7b17b4a0e7fd84f6a20916+d1fba762150c532c",
+  "picker": "codex:01a1fc2a-234a-7ac0-9759-a358d49af679:default",
+  "author": "claude-code:0cdbe655-118d-5679-86f1-2ef69adcde1a:opus",
+  "none": "ExitCode has no Default implementation, and the version assertions kill both replacements for answer."
+}

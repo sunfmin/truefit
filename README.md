@@ -12,6 +12,9 @@ The manual is `truefit --help`, and it is the only copy.
 
 ## Develop
 
-- `./gate.sh`: fmt, clippy, and the tests through `slimfit check`.
+- `./gate.sh`: fmt, clippy, the tests through `slimfit check`, and the release
+  script as far as it goes without publishing (`packaging/release.sh dry`).
+- A release is cut by factorium (`[cut]` in `factorium.toml`):
+  `packaging/release.sh cut vX.Y.Z` publishes the formula `sunfmin/tap/truefit`.
 
 The decisions are in `docs/adr/`.
