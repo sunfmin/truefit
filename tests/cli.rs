@@ -1175,6 +1175,14 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
     assert_eq!(task["evidence"]["unmarked"][0]["hash"], hash.as_str());
     let (code, out) = truefit_in(&dir, &["promise", "--mark", &hash, "maybe"]);
     assert_eq!(code, Some(2), "{out:#}");
+    let (code, out) = truefit_in(&dir, &["promise", "--mark", "0000", "not"]);
+    assert_eq!(code, Some(2), "{out:#}");
+    assert!(
+        out["error"][0]["fault"]
+            .as_str()
+            .unwrap()
+            .contains("no candidate's hash")
+    );
     let (code, _) = truefit_in(&dir, &["promise", "--mark", &hash]);
     assert_eq!(code, Some(2));
     let (_, out) = truefit_in(&dir, &["promise", "--mark", &hash, "not"]);

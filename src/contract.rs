@@ -344,6 +344,16 @@ pub fn differ_file(name: &str) -> String {
     format!(".truefit/{name}.differ.json")
 }
 
+/// Writes `value` to `root/file`, or the fault that it cannot.
+pub fn save(root: &Path, file: &str, value: &Value) -> Result<(), Vec<Value>> {
+    write(root, file, value).map_err(|e| {
+        vec![fault(
+            format!("cannot write {file}: {e}"),
+            "make .truefit/ a directory truefit can write",
+        )]
+    })
+}
+
 /// Writes `value` to `root/file`, making the directories it is in.
 pub fn write(root: &Path, file: &str, value: &Value) -> std::io::Result<()> {
     let path = root.join(file);

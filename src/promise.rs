@@ -354,12 +354,7 @@ fn mark(root: &Path, found: &[Value], pairs: &[&str]) -> Result<(), Vec<Value>> 
     if !faults.is_empty() {
         return Err(faults);
     }
-    contract::write(root, MARKS, &marks).map_err(|e| {
-        vec![fault(
-            format!("cannot write {MARKS}: {e}"),
-            "make .truefit/ a directory truefit can write",
-        )]
-    })
+    contract::save(root, MARKS, &marks)
 }
 
 /// The `unregistered-promise`, `unchecked-promise` and `unreached-promise` tasks.

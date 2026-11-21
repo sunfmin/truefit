@@ -112,12 +112,7 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
         .collect();
     let record =
         json!({"date": contract::today(), "seeds": kept_reports as u64 + ran, "reached": reached});
-    contract::write(root, REACHED, &record).map_err(|e| {
-        vec![fault(
-            format!("cannot write {REACHED}: {e}"),
-            "make .truefit/ a directory truefit can write",
-        )]
-    })?;
+    contract::save(root, REACHED, &record)?;
     let next = advice(&reports);
     let ok = reports.iter().all(|r| r["result"] == "passes");
     let failing = reports.split_off(kept_reports);
@@ -439,13 +434,7 @@ fn all_kept(root: &Path) -> Vec<(String, Value)> {
 }
 
 fn write(root: &Path, seed: &str, record: &Value) -> Result<(), Vec<Value>> {
-    let file = file(seed);
-    contract::write(root, &file, record).map_err(|e| {
-        vec![fault(
-            format!("cannot write {file}: {e}"),
-            format!("make {SEEDS}/ a directory truefit can write"),
-        )]
-    })
+    contract::save(root, &file(seed), record)
 }
 
 fn entropy() -> u64 {
