@@ -1,0 +1,9 @@
+[package]
+name = "truefit"
+version = "0.1.0"
+edition = "2024"
+description = "Keeps a system's tests and models true to the real system"
+license = "MIT"
+publish = false
+
+[dependencies]

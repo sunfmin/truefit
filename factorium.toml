@@ -1,0 +1,15 @@
+# How factorium gates truefit (factorium SPEC.md §5). No [cut] yet: truefit#1
+# adds packaging/release.sh and the cut.
+
+[gate]
+fast = "./gate.sh"
+fast_limit = 600
+slow = "./gate.sh"
+slow_limit = 600
+
+# slimfit's tasks and a sample of landed changes' mutants, filed as issues
+# while the host is idle (SPEC §1.16).
+[idle]
+tasks = "slimfit --version && slimfit next --all --sample 5"
+every = 86400
+limit = 1800
