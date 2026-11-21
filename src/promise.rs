@@ -21,33 +21,31 @@ const WORDS: &str = "never, always, at most, exactly once, only, within, every";
 /// does not choose: one that needs both `sim` and `model`.
 const CONCURRENT: &str = "at once, concurrent, concurrently, in parallel, simultaneous, race, out of order, reorder, crash, crashes, restart, retry, retries, lease, queue, lost, twice, deliver, delivered, redelivered, exactly once, at least once";
 
-/// `[promises]`: the files whose sentences are candidates.
+/// `[promises]`: the files whose sentences are candidates, and how many
+/// days of history the fixes are read from.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, default)]
 pub struct Sources {
-    #[serde(default = "default_sources")]
     sources: Vec<String>,
+    pub history_days: u64,
 }
 
 impl Default for Sources {
     fn default() -> Self {
         Sources {
-            sources: default_sources(),
+            sources: ["SPEC.md", "README.md", "docs/adr/*.md"]
+                .map(String::from)
+                .into(),
+            history_days: 180,
         }
     }
-}
-
-fn default_sources() -> Vec<String> {
-    ["SPEC.md", "README.md", "docs/adr/*.md"]
-        .map(String::from)
-        .into()
 }
 
 /// `[[promise]]`: one promise, the sentence that makes it, and its checks.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Promise {
-    name: String,
+    pub name: String,
     says: String,
     source: String,
     #[serde(default)]
@@ -61,7 +59,7 @@ pub struct Promise {
 }
 
 impl Promise {
-    fn checks(&self) -> Vec<(&str, &str)> {
+    pub fn checks(&self) -> Vec<(&str, &str)> {
         let mut c: Vec<(&str, &str)> = self
             .check
             .iter()
@@ -111,23 +109,27 @@ pub fn faults(config: &Config) -> Vec<Value> {
     faults
 }
 
-/// `truefit promise [--mark <hash> <promise|not> ...]`.
-pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
+/// `truefit promise [--mark <hash> <promise|not> ... [--why <reason>]]`.
+pub fn run(root: &Path, marks: &[&str], why: Option<&str>) -> Result<(Value, bool), Vec<Value>> {
     let config = contract::load(root)?;
     let found = sentences(root, &config);
     if !marks.is_empty() {
-        mark(root, &found, marks)?;
+        let owed = crate::history::found(root, &config).0;
+        mark(root, &found, &owed, marks, why)?;
     }
     let promises: Vec<Value> = config
         .promise
         .iter()
-        .map(|p| status(root, &config, p))
+        .map(|p| status(root, &config, p).0)
         .collect();
     let (unmarked, unregistered) = candidates(root, &config, &found);
     let failing = |s: &str| promises.iter().filter(|p| p["status"] == s).count();
     let mut next = Vec::new();
     if failing("unreached") > 0 {
         next.push("make each `unreached` promise's named check reach it: a simulation step that checks it by name in a state it is about, a model whose config checks an invariant of its name");
+    }
+    if failing("unbacked") > 0 {
+        next.push("back each `unbacked` promise's model (`why`): commit a run it allows under .truefit/traces/<model>/accept/ and one that breaks the promise under reject/, then `truefit model <model>`");
     }
     if failing("unchecked") > 0 {
         next.push("give each `unchecked` promise its checks from the ladder (`truefit --help`), or the reason it needs none");
@@ -147,11 +149,15 @@ pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
     Ok((report, ok))
 }
 
-/// One promise's status: `kept`, `unchecked`, `unreached` or `checked`.
-fn status(root: &Path, config: &Config, p: &Promise) -> Value {
+/// One promise's status: `kept`, `unchecked`, `unreached`, `unbacked` (a
+/// model reaches it, but its last check lacks a passing TLC run, an accept
+/// trace or a reject trace that breaks it) or `checked`; and, when
+/// `unbacked`, each model that does not back it, with why.
+fn status<'p>(root: &Path, config: &Config, p: &'p Promise) -> (Value, Vec<(&'p str, String)>) {
     let checks = p.checks();
     let has = |rung: &str| checks.iter().any(|(r, _)| *r == rung);
     let mut report = json!({"name": p.name, "says": p.says, "source": p.source, "check": p.check});
+    let mut models = Vec::new();
     let (status, why) = if let Some(kept) = &p.kept {
         ("kept", kept.clone())
     } else if p.check.is_empty() {
@@ -177,16 +183,32 @@ fn status(root: &Path, config: &Config, p: &Promise) -> Value {
                 _ => None,
             })
             .collect();
-        match unreached.is_empty() {
-            true => ("checked", String::new()),
-            false => ("unreached", unreached.join("; ")),
+        let unbacked: Vec<(&str, String)> = checks
+            .iter()
+            .filter(|(rung, _)| *rung == "model")
+            .filter_map(|&(_, m)| {
+                Some((m, crate::model::unbacked(root, &config.model, m, &p.name)?))
+            })
+            .collect();
+        match (unreached.is_empty(), unbacked.is_empty()) {
+            (false, _) => ("unreached", unreached.join("; ")),
+            (true, false) => {
+                let why = unbacked
+                    .iter()
+                    .map(|(_, w)| w.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                models = unbacked;
+                ("unbacked", why)
+            }
+            (true, true) => ("checked", String::new()),
         }
     };
     report["status"] = status.into();
     if !why.is_empty() {
         report["why"] = why.into();
     }
-    report
+    (report, models)
 }
 
 /// Whether two names are one invariant's: alike but for case and punctuation,
@@ -305,7 +327,7 @@ fn sentences_of(block: &[(usize, &str)], out: &mut Vec<(usize, String)>) {
 }
 
 /// Whether `text` has any of `words` (`, `-separated), each as whole words, in any case.
-fn has_any(text: &str, words: &str) -> bool {
+pub fn has_any(text: &str, words: &str) -> bool {
     let words_of = |s: &str| {
         let words: Vec<String> = s
             .to_lowercase()
@@ -327,14 +349,21 @@ fn plain(s: &str) -> String {
         .join(" ")
 }
 
-fn hash(sentence: &str) -> String {
+pub fn hash(sentence: &str) -> String {
     use sha2::Digest;
     let digest = sha2::Sha256::digest(plain(sentence));
     digest[..6].iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Records each `<hash> <promise|not>` pair given to `--mark`.
-fn mark(root: &Path, found: &[Value], pairs: &[&str]) -> Result<(), Vec<Value>> {
+/// Records each `<hash> <promise|not>` pair given to `--mark`: of a
+/// candidate, or (`not`, with `why`) of a task the history owes.
+fn mark(
+    root: &Path,
+    found: &[Value],
+    owed: &[Value],
+    pairs: &[&str],
+    why: Option<&str>,
+) -> Result<(), Vec<Value>> {
     let mut marks = contract::read(root, MARKS);
     if !marks.is_object() {
         marks = json!({});
@@ -343,14 +372,25 @@ fn mark(root: &Path, found: &[Value], pairs: &[&str]) -> Result<(), Vec<Value>> 
     for pair in pairs.chunks(2) {
         let (hash, mark) = (pair[0], pair.get(1).copied().unwrap_or(""));
         let candidate = found.iter().find(|c| c["hash"] == hash);
-        match (candidate, mark) {
-            (Some(c), "promise" | "not") => {
+        let task = owed.iter().find(|t| t["evidence"]["hash"] == hash);
+        match (candidate, task, mark, why) {
+            (Some(c), _, "promise" | "not", _) => {
                 marks[hash] =
                     json!({"mark": mark, "sentence": c["sentence"], "source": c["source"]});
+                if let Some(why) = why {
+                    marks[hash]["why"] = why.into();
+                }
             }
-            (None, _) => faults.push(fault(
-                format!("`{hash}` is no candidate's hash"),
-                "mark a hash `truefit promise` lists: the sentence may have changed since",
+            (_, Some(t), "not", Some(why)) if !why.trim().is_empty() => {
+                marks[hash] = json!({"mark": mark, "why": why, "kind": t["kind"], "summary": t["summary"]});
+            }
+            (_, Some(t), _, _) => faults.push(fault(
+                format!("`{hash}` is a {} task, marked only `not` with its `--why`", t["kind"].as_str().unwrap_or("")),
+                "do the task's steps (register the promise), or mark it `not` with `--why \"<reason>\"`",
+            )),
+            (None, None, _, _) => faults.push(fault(
+                format!("`{hash}` is no candidate's hash, nor a task's"),
+                "mark a hash `truefit promise` or `truefit next` lists: the sentence or the history may have changed since",
             )),
             _ => faults.push(fault(
                 format!("`{mark}` is no mark"),
@@ -364,7 +404,8 @@ fn mark(root: &Path, found: &[Value], pairs: &[&str]) -> Result<(), Vec<Value>> 
     contract::save(root, MARKS, &marks)
 }
 
-/// The `unregistered-promise`, `unchecked-promise` and `unreached-promise` tasks.
+/// The `unregistered-promise`, `unchecked-promise`, `unreached-promise` and
+/// `unbacked-model` tasks.
 pub fn tasks(root: &Path, config: &Config) -> Vec<Value> {
     let mut tasks = Vec::new();
     let (unmarked, unregistered) = candidates(root, config, &sentences(root, config));
@@ -378,8 +419,16 @@ pub fn tasks(root: &Path, config: &Config) -> Vec<Value> {
             "accept": "truefit promise",
         }));
     }
+    // Each unbacked model, with each promise it does not back and why.
+    let mut unbacked: std::collections::BTreeMap<&str, Vec<Value>> = Default::default();
     for p in &config.promise {
-        let s = status(root, config, p);
+        let (s, models) = status(root, config, p);
+        for (m, why) in models {
+            unbacked
+                .entry(m)
+                .or_default()
+                .push(json!({"promise": p.name, "why": why}));
+        }
         let kind = match s["status"].as_str() {
             Some("unchecked") => "unchecked-promise",
             Some("unreached") => "unreached-promise",
@@ -402,6 +451,17 @@ pub fn tasks(root: &Path, config: &Config) -> Vec<Value> {
             "files": [CONFIG, p.source.split(':').next().unwrap_or("")],
             "evidence": s,
             "steps": steps,
+            "accept": "truefit promise",
+        }));
+    }
+    for (m, promises) in unbacked {
+        let traces = format!("{}/{m}", crate::model::TRACES);
+        tasks.push(json!({
+            "kind": "unbacked-model",
+            "summary": format!("model {m} does not back {}", promises.iter().filter_map(|p| p["promise"].as_str()).collect::<Vec<_>>().join(", ")),
+            "files": [CONFIG, traces],
+            "evidence": {"model": m, "promises": promises},
+            "steps": format!("A model checks a promise only with TLC passing, a real run it allows and a run that breaks the promise it rejects. Take a real run's records, or a passing seed's (`truefit sim`), check them with `truefit model {m} --trace <file>` until `allowed`, and commit the file under {traces}/accept/. Take a run that breaks the promise (a failing seed's lines, `.truefit/seeds/<seed>.json`, or a run written by hand that does the wrong thing), see it `disallowed`, and commit it under {traces}/reject/. Run `truefit model {m}`: its reject trace must break the promise's invariant. A trace the model answers wrongly is a model too strict or too permissive, or a property too weak: fix the model or the code, never weaken the property. Commit .truefit/."),
             "accept": "truefit promise",
         }));
     }

@@ -35,7 +35,17 @@ fn sample(name: &str, tag: &str) -> PathBuf {
         .status()
         .unwrap();
     assert!(ok.success());
-    let _ = std::fs::remove_dir_all(dir.join(".truefit"));
+    // What runs left there, but the committed traces.
+    for e in std::fs::read_dir(dir.join(".truefit"))
+        .into_iter()
+        .flatten()
+    {
+        let e = e.unwrap();
+        if e.file_name() != "traces" {
+            let _ = std::fs::remove_dir_all(e.path());
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     dir
 }
 
@@ -534,7 +544,9 @@ args = ["hi"]
     let (code, out) = truefit_in(&dir, &["next", "--all"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["tasks"], serde_json::json!([]), "{out:#}");
-    assert_eq!(out["notes"], serde_json::json!([]));
+    let notes = out["notes"].as_array().unwrap();
+    assert_eq!(notes.len(), 1, "{out:#}");
+    assert!(notes[0].as_str().unwrap().contains("in no git repo"));
     assert!(out["next"].as_str().unwrap().starts_with("nothing"));
     let (_, out) = truefit_in(&dir, &["next"]);
     assert!(out["task"].is_null());
@@ -553,13 +565,13 @@ fn next_without_declared_stand_in_places_says_so() {
     );
 }
 
-/// `truefit next`'s counts but the sim sample's promise tasks.
+/// `truefit next`'s counts but the sim sample's promise and unbacked-model tasks.
 fn but_promises(next: &Value) -> Value {
     let mut counts = next["counts"].clone();
     counts
         .as_object_mut()
         .unwrap()
-        .retain(|kind, _| !kind.ends_with("-promise"));
+        .retain(|kind, _| !kind.ends_with("-promise") && kind != "unbacked-model");
     counts
 }
 
@@ -1007,6 +1019,14 @@ fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
     );
     assert_eq!(behaviour.last().unwrap()["state"]["applied"], "<<2, 0, 0>>");
     assert!(queue["output"].is_null());
+    // Too permissive: it allows the committed run that applies a message twice.
+    assert_eq!(queue["traces"]["reject"][0]["result"], "allowed", "{out:#}");
+    assert!(
+        queue["wrong"][0]
+            .as_str()
+            .unwrap()
+            .contains("too permissive")
+    );
     assert!(
         out["next"]
             .as_str()
@@ -1029,7 +1049,7 @@ fn a_trace_the_model_allows_passes_and_one_it_does_not_names_its_first_disallowe
     let t = &out["trace"];
     assert_eq!(
         (&t["result"], &t["step"], &t["records"]),
-        (&"disallowed".into(), &3.into(), &4.into())
+        (&"disallowed".into(), &3.into(), &3.into())
     );
     assert_eq!(t["record"]["event"], "apply 2, ack");
     assert_eq!(t["after"]["event"], "apply 2, crash");
@@ -1071,6 +1091,97 @@ fn a_trace_the_model_allows_passes_and_one_it_does_not_names_its_first_disallowe
             .unwrap()
             .starts_with("correct [model.trace]")
     );
+}
+
+#[test]
+fn a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks_the_promise() {
+    let dir = model_sample("backed", &[]);
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    let traces = &out["models"][0]["traces"];
+    assert_eq!(
+        traces["accept"][0]["file"],
+        ".truefit/traces/queue/accept/1.jsonl"
+    );
+    assert_eq!(traces["accept"][0]["result"], "allowed");
+    let reject = &traces["reject"][0];
+    assert_eq!(
+        (
+            &reject["result"],
+            &reject["step"],
+            &reject["breaks"],
+            &reject["breaks_at"]
+        ),
+        (
+            &"disallowed".into(),
+            &3.into(),
+            &"AppliedOnce".into(),
+            &3.into()
+        ),
+        "{out:#}"
+    );
+    let record: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join(".truefit/models/queue.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(record["result"], "passes");
+    assert!(record["commit"].is_null(), "in no git repo: {record:#}");
+    assert_eq!(record["traces"]["reject"][0]["breaks"], "AppliedOnce");
+    let spec = std::fs::read_to_string(dir.join("Queue.tla")).unwrap();
+    let fails = |changed: &str, naming: &str| {
+        std::fs::write(dir.join("Queue.tla"), changed).unwrap();
+        let (code, out) = truefit_in(&dir, &["model", "queue"]);
+        assert_eq!(code, Some(1), "{out:#}");
+        let error = out["models"][0]["error"].as_str().unwrap();
+        assert!(error.contains(naming), "{out:#}");
+        assert!(
+            out["next"]
+                .as_str()
+                .unwrap()
+                .contains("never weaken the property")
+        );
+        error.to_string()
+    };
+    // The property weakened: TLC passes, but the run that breaks it is no longer caught.
+    let weak = fails(
+        &spec.replace("applied[m] <= 1", "applied[m] <= 2"),
+        ".truefit/traces/queue/reject/3.jsonl",
+    );
+    assert!(weak.contains("too weak"), "{weak}");
+    // A guard too strict: the real run's last ack is no step of it.
+    let strict = fails(
+        &spec.replace("ApplyAck == /\\ head <= N", "ApplyAck == /\\ head < N"),
+        ".truefit/traces/queue/accept/1.jsonl is disallowed at step 3",
+    );
+    assert!(!strict.contains("reject"), "{strict}");
+    std::fs::write(dir.join("Queue.tla"), &spec).unwrap();
+    // Without a reject trace the model still passes; its promises are unbacked.
+    std::fs::remove_dir_all(dir.join(".truefit/traces/queue/reject")).unwrap();
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["models"][0]["traces"]["reject"], serde_json::json!([]));
+    truefit_in(&dir, &["sim", "--seeds", "20"]);
+    let why = |dir: &Path| {
+        let (_, out) = truefit_in(dir, &["promise"]);
+        assert_eq!(out["promises"][0]["status"], "unbacked", "{out:#}");
+        out["promises"][0]["why"].as_str().unwrap().to_string()
+    };
+    assert!(why(&dir).contains("no reject trace it disallows that breaks `applied-once`"));
+    // A reject trace that breaks another invariant (TypeOK: a head past N + 1) backs not this promise.
+    let reject = dir.join(".truefit/traces/queue/reject");
+    std::fs::create_dir_all(&reject).unwrap();
+    std::fs::write(
+        reject.join("head.jsonl"),
+        r#"{"step":1,"state":{"applied":[0,0,0],"next":9}}"#,
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["models"][0]["traces"]["reject"][0]["breaks"], "TypeOK");
+    assert!(why(&dir).contains("no reject trace it disallows that breaks `applied-once`"));
+    // A record of other inputs backs nothing.
+    std::fs::write(dir.join("Queue.tla"), spec + "\\* a change\n").unwrap();
+    assert!(why(&dir).contains("changed since its last `truefit model`"));
 }
 
 #[test]
@@ -1292,8 +1403,33 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
         sim["reached"]["applied-once"]["seeds"].as_u64().unwrap() > 0,
         "{sim:#}"
     );
+    // Reached by the model, but not backed until `truefit model` records its traces.
+    let (_, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(out["promises"][0]["status"], "unbacked", "{out:#}");
+    assert!(
+        out["promises"][0]["why"]
+            .as_str()
+            .unwrap()
+            .contains("no `truefit model queue` run is recorded"),
+        "{out:#}"
+    );
+    let (_, next) = truefit_in(&dir, &["next", "--all"]);
+    let task = next["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "unbacked-model")
+        .unwrap();
+    assert_eq!(task["evidence"]["promises"][0]["promise"], "applied-once");
+    assert_eq!(task["summary"], "model queue does not back applied-once");
+    let (code, _) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0));
     let (code, out) = truefit_in(&dir, &["promise"]);
     assert_eq!(code, Some(1));
+    assert!(
+        !out["next"].as_str().unwrap().contains("unbacked"),
+        "{out:#}"
+    );
     let want = [
         ("applied-once", "checked"),
         ("no-lost-message", "unreached"),
@@ -1477,6 +1613,153 @@ fn promise_faults_exit_2() {
     assert_eq!(out["error"].as_array().unwrap().len(), 6, "{out:#}");
     let (code, _) = truefit_in(&dir, &["promise", "--frob"]);
     assert_eq!(code, Some(2));
+}
+
+#[test]
+fn a_file_fixed_twice_is_owed_a_promise_until_a_check_covers_it_or_it_is_marked_not() {
+    let dir = sample("history", "fixed-often");
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(
+        out["notes"][1]
+            .as_str()
+            .unwrap()
+            .contains("files fixed often are not looked for"),
+        "{out:#}"
+    );
+    assert!(
+        Command::new("sh")
+            .arg(dir.join("history"))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let (code, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        out["counts"],
+        serde_json::json!({"fixed-often": 1}),
+        "{out:#}"
+    );
+    let task = &out["tasks"][0];
+    assert_eq!(
+        task["summary"],
+        "ledger.awk was changed by 2 fixes in 180 days, and no registered promise's check covers it"
+    );
+    let fixes: Vec<&str> = task["evidence"]["commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["fix"].as_str().unwrap())
+        .collect();
+    assert_eq!(fixes[0], "ledger#2", "{task:#}");
+    assert_eq!(
+        fixes[1].len(),
+        40,
+        "a fix naming no issue is its own commit: {task:#}"
+    );
+    let hash = task["evidence"]["hash"].as_str().unwrap().to_string();
+    for args in [
+        &["not"][..],
+        &["not", "--why", " "],
+        &["promise", "--why", "x"],
+    ] {
+        let mut mark = vec!["promise", "--mark", &hash];
+        mark.extend(args);
+        let (code, out) = truefit_in(&dir, &mark);
+        assert_eq!(code, Some(2), "{args:?}: {out:#}");
+        let fault = out["error"][0]["fault"].as_str().unwrap();
+        assert!(
+            fault.contains("marked only `not` with its `--why`"),
+            "{fault}"
+        );
+    }
+    let (code, _) = truefit_in(
+        &dir,
+        &[
+            "promise",
+            "--mark",
+            &hash,
+            "not",
+            "--why",
+            "two slips, no promise",
+        ],
+    );
+    assert_eq!(code, Some(0));
+    let marks = std::fs::read_to_string(dir.join(".truefit/promises.json")).unwrap();
+    assert!(marks.contains("two slips, no promise"), "{marks}");
+    let (_, out) = truefit_in(&dir, &["next"]);
+    assert_eq!(out["task"], Value::Null, "{out:#}");
+    // A new commit to the file asks again; a promise whose check covers it answers.
+    std::fs::write(dir.join("ledger.awk"), "{ charged[$1] += $2 }\n").unwrap();
+    let git = |args: &[&str]| {
+        let ok = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        assert!(ok.success());
+    };
+    git(&["commit", "-qam", "Simpler"]);
+    let (_, out) = truefit_in(&dir, &["next"]);
+    assert_eq!(out["task"]["kind"], "fixed-often", "{out:#}");
+    assert_ne!(out["task"]["evidence"]["hash"], hash.as_str());
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap()
+        + "[sim]\nrun = [\"./sim\"]\ncode = [\"*.awk\"]\n\n[[promise]]\nname = \"charged-once\"\nsays = \"An order is charged once.\"\nsource = \"README.md:1\"\ncheck = [\"sim\"]\n";
+    std::fs::write(dir.join("truefit.toml"), toml).unwrap();
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["counts"].get("fixed-often"), None, "{out:#}");
+}
+
+#[test]
+fn a_failing_seed_whose_invariant_no_promise_names_is_owed_one() {
+    let dir = sample("sim", "seed-promise");
+    let (code, _) = truefit_in(&dir, &["sim", "--seeds", "10"]);
+    assert_eq!(code, Some(1));
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(
+        out["counts"].get("failing-seed-promise"),
+        None,
+        "applied-once is registered: {out:#}"
+    );
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    std::fs::write(
+        dir.join("truefit.toml"),
+        toml.replace("name = \"applied-once\"", "name = \"applied-at-most-once\""),
+    )
+    .unwrap();
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["counts"]["failing-seed-promise"], 1, "{out:#}");
+    let task = out["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "failing-seed-promise")
+        .unwrap();
+    assert_eq!(task["evidence"]["invariant"], "applied-once");
+    assert_eq!(
+        task["evidence"]["seeds"].as_array().unwrap().len(),
+        kept_seeds(&dir).len()
+    );
+    let hash = task["evidence"]["hash"].as_str().unwrap();
+    let (code, _) = truefit_in(
+        &dir,
+        &[
+            "promise",
+            "--mark",
+            hash,
+            "not",
+            "--why",
+            "the sample's own check",
+        ],
+    );
+    assert_eq!(
+        code,
+        Some(1),
+        "marked; the renamed promise is still unreached"
+    );
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["counts"].get("failing-seed-promise"), None, "{out:#}");
 }
 
 #[test]

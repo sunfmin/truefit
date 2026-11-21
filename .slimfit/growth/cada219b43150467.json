@@ -1,0 +1,10 @@
+{
+  "tree": "8c60820ea0c1c7e5752087c573eadfa66d3a27f4+d1fba762150c532c",
+  "lines": 180,
+  "serves": "truefit#10",
+  "considered": "Reused: promise's has_any, hash, same_name and mark (history tasks are marked through the same --mark and .truefit/promises.json), next::expand for [sim] code globs, sim::all_kept for kept seeds; model's inline git closure moved to one contract::git that model and history share. Weighed putting the history in promise.rs (433 lines) or model::tasks; kept it a module of its own, as each other task source is.",
+  "reviewer": "codex:01a1fd67-d032-7ca1-9bf3-b40f3ad5d465:default",
+  "author": "claude-code:dd56c93f-b03d-5367-8c53-3a04c03d631d:opus",
+  "cut": "From the supplied diff, in src/promise.rs use struct-level Serde defaults for Sources and keep 180 in Default, removing the field-level defaults and default_history_days. In src/main.rs drop the why.is_none() guard on the empty argument arm because the --why parser leaves at least one argument. In src/history.rs walk parent components with rsplit('/').skip(1), count distinct fix IDs with a BTreeSet while preserving the commit evidence order, and normalize ./ when comparing covered paths to remove the second collection. In src/model.rs return an iterator from files so src/history.rs can extend its coverage list directly without a temporary Vec.",
+  "answer": "Made every cut: Sources takes #[serde(default)] at the struct with 180 and the sources in Default (default_sources and default_history_days gone); main's empty arm has no guard; code() walks rsplit('/').skip(1); fixes are a BTreeSet; covered is compared with ./ trimmed in place; model::files returns an iterator. 38 lines out, 18 in."
+}
