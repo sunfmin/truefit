@@ -1,0 +1,39 @@
+{
+  "tree": "8977323379cc805e154681e30fb3f8db44501ba0+d1fba762150c532c",
+  "picker": "codex:01a1fc46-1441-7c93-9b8f-5d4d726453bd:default",
+  "author": "claude-code:7c673545-c8ad-5092-8d09-2987b9f8241a:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/main.rs:84:87: delete - in sim",
+        "why": "The tests reject a negative budget but never check that a nonnumeric budget is rejected instead of being treated as one second.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/sim.rs:26:5: replace default_seeds -> u64 with 0",
+        "why": "The successful bare sim invocation sets an explicit seed count, so the documented default of 20 can silently become zero.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/sim.rs:86:71: replace < with == in run",
+        "why": "The zero-budget test exercises the mandatory first run but never checks that a positive budget allows more runs while time remains.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/sim.rs:197:27: delete ! in rerun",
+        "why": "The nondeterminism test never makes the first rerun of a flagged seed match its saved output, the case where the flag alone must trigger confirmation.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/sim.rs:396:5: replace entropy -> u64 with 0",
+        "why": "The tests check seed diversity within one invocation but never compare independent invocations, so each can start from the same fixed seed sequence.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}
