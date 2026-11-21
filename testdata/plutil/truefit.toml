@@ -1,0 +1,57 @@
+# The sample: two stand-ins of macOS plutil, one true to it and one not.
+
+[[standin]]
+name = "plutil"
+run = ["./plutil-standin"]
+real = ["plutil"]
+needs = "macOS's /usr/bin/plutil"
+version = ["sw_vers", "-productVersion"]
+compare = ["exit", "stdout", "stderr", "files"]
+# plutil names why a file is no property list; the system reads only that it is not.
+normalise = [{ pattern = ': \(.*\)', replace = ": (<why>)" }]
+
+[[standin.case]]
+name = "lint-ok"
+dir = "case"
+args = ["-lint", "ok.plist"]
+
+[[standin.case]]
+name = "lint-bad"
+dir = "case"
+args = ["-lint", "bad.plist"]
+
+[[standin.case]]
+name = "json-from-stdin"
+args = ["-convert", "json", "-o", "-", "-"]
+stdin = """
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>name</key><string>truefit</string></dict></plist>
+"""
+
+[[standin.case]]
+name = "json-to-file"
+dir = "case"
+args = ["-convert", "json", "-o", "out.json", "ok.plist"]
+files = ["out.json"]
+
+[[standin]]
+name = "plutil-wrong"
+run = ["./plutil-wrong"]
+real = ["plutil"]
+needs = "macOS's /usr/bin/plutil"
+version = ["sw_vers", "-productVersion"]
+compare = ["exit", "stdout", "stderr"]
+normalise = [{ pattern = ': \(.*\)', replace = ": (<why>)" }]
+
+[[standin.case]]
+name = "lint-bad"
+dir = "case"
+args = ["-lint", "bad.plist"]
+
+[[standin.case]]
+name = "json-from-stdin"
+args = ["-convert", "json", "-o", "-", "-"]
+stdin = """
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>name</key><string>truefit</string></dict></plist>
+"""

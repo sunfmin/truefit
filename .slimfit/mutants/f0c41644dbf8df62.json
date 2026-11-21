@@ -1,0 +1,39 @@
+{
+  "tree": "e05ae06deb81cb36eb56fbf46b3f83c66995b56d+d1fba762150c532c",
+  "picker": "codex:01a1fc2e-48c3-7430-8347-ca83d703b56c:default",
+  "author": "claude-code:e9028cd5-fc48-5ad4-83e5-3d18081868a9:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/contract.rs:42:5: replace default_compare -> Vec<String> with vec![]",
+        "why": "No test omits compare and then checks whether differing exit codes or stdout cause a failure.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/contract.rs:118:13: delete match arm Some(\"not run\") in run",
+        "why": "The unavailable-program tests check the result and needs fields but leave the remediation text in next unchecked.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/contract.rs:122:18: replace match guard real.is_some() with true in run",
+        "why": "The plain-run failure test checks the exit code and case result, so advice to fix a real-run mismatch could slip through.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/contract.rs:122:18: replace match guard real.is_some() with false in run",
+        "why": "The real mismatch test only checks that next contains the stand-in name, which the plain-run advice also includes.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/contract.rs:425:16: replace / with % in today",
+        "why": "The record test checks the date's length, so treating seconds within the current UTC day as days since the epoch would still produce an accepted string.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+#!/bin/sh
+# A stand-in of macOS plutil: only the answers its contract holds.
+case "$1" in
+-lint)
+  if grep -q '<plist' "$2" 2>/dev/null; then
+    echo "$2: OK"
+  else
+    echo "$2: (not a property list)" >&2
+    exit 1
+  fi ;;
+-convert) # -convert json -o <out> <in>; `-` is stdout or stdin
+  in=$5; [ "$in" = - ] && in=/dev/stdin
+  name=$(sed -n 's:.*<string>\(.*\)</string>.*:\1:p' "$in")
+  if [ "$4" = - ]; then printf '{"name":"%s"}' "$name"; else printf '{"name":"%s"}' "$name" > "$4"; fi ;;
+*) echo "plutil-standin: no case for $*" >&2; exit 64 ;;
+esac

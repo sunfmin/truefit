@@ -1,0 +1,11 @@
+# A stand-in whose real program is not here.
+
+[[standin]]
+name = "frobnicate"
+run = ["/bin/echo"]
+real = ["truefit-no-such-program"]
+needs = "truefit-no-such-program 1.x on PATH, logged in"
+
+[[standin.case]]
+name = "hello"
+args = ["hello"]

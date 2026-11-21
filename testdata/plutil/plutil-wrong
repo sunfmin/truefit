@@ -1,0 +1,6 @@
+#!/bin/sh
+# A wrong stand-in of plutil: every file lints OK, and its JSON is pretty.
+case "$1" in
+-lint) echo "$2: OK" ;;
+-convert) printf '{\n  "name" : "truefit"\n}\n' ;;
+esac
