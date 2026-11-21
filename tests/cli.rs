@@ -1110,17 +1110,11 @@ fn model_faults_exit_2() {
 }
 
 /// Each sample promise's status, by name.
-fn statuses(out: &Value) -> Vec<(String, String)> {
-    out["promises"]
-        .as_array()
-        .unwrap()
+fn statuses(out: &Value) -> Vec<(&str, &str)> {
+    let promises = out["promises"].as_array().unwrap();
+    promises
         .iter()
-        .map(|p| {
-            (
-                p["name"].as_str().unwrap().into(),
-                p["status"].as_str().unwrap().into(),
-            )
-        })
+        .map(|p| (p["name"].as_str().unwrap(), p["status"].as_str().unwrap()))
         .collect()
 }
 
@@ -1150,10 +1144,6 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
         ("head-in-range", "unchecked"),
         ("seeded", "kept"),
     ];
-    let want: Vec<(String, String)> = want
-        .iter()
-        .map(|(n, s)| (n.to_string(), s.to_string()))
-        .collect();
     assert_eq!(statuses(&out), want, "{out:#}");
     let why = out["promises"][1]["why"].as_str().unwrap();
     assert!(

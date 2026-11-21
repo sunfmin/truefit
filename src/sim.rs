@@ -76,17 +76,14 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
     };
     let mut reach = Reach::new();
     if let Ask::Seed(seed) = &ask {
-        let report = match kept(root, seed) {
-            Some(k) => rerun(root, &sim, seed, &k, &mut reach)?,
-            None => fresh(root, &sim, seed, &mut reach)?,
-        };
+        let report = seed_run(root, &sim, seed, &mut reach)?;
         let next = advice(std::slice::from_ref(&report));
         let ok = report["result"] == "passes";
         return Ok((json!({"seed": report, "next": next}), ok));
     }
     let mut reports = Vec::new();
-    for (seed, k) in all_kept(root) {
-        reports.push(rerun(root, &sim, &seed, &k, &mut reach)?);
+    for (seed, _) in all_kept(root) {
+        reports.push(seed_run(root, &sim, &seed, &mut reach)?);
     }
     let kept_reports = reports.len();
     let (start, base) = (Instant::now(), entropy());
@@ -96,7 +93,7 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
         Ask::Run(Some(New::Seeds(n))) => ran < *n,
         _ => ran < sim.seeds,
     } {
-        let r = fresh(root, &sim, &new_seed(base, ran), &mut reach)?;
+        let r = seed_run(root, &sim, &new_seed(base, ran), &mut reach)?;
         ran += 1;
         if r["result"] == "passes" {
             passed += 1;
@@ -179,11 +176,19 @@ fn once(root: &Path, sim: &Sim, seed: &str) -> Result<Run, Vec<Value>> {
     })
 }
 
-/// A seed no kept record holds: run it; when it fails, run it again to see
-/// that it reruns alike, and keep it.
-fn fresh(root: &Path, sim: &Sim, seed: &str, reach: &mut Reach) -> Result<Value, Vec<Value>> {
+/// One seed's run, noted in `reach`: a kept one rerun, any other fresh.
+fn seed_run(root: &Path, sim: &Sim, seed: &str, reach: &mut Reach) -> Result<Value, Vec<Value>> {
     let a = once(root, sim, seed)?;
     note(reach, seed, &a.lines);
+    match kept(root, seed) {
+        Some(k) => rerun(root, sim, seed, &k, a),
+        None => fresh(root, sim, seed, a),
+    }
+}
+
+/// A seed no kept record holds, run as `a`: when it fails, run it again to
+/// see that it reruns alike, and keep it.
+fn fresh(root: &Path, sim: &Sim, seed: &str, a: Run) -> Result<Value, Vec<Value>> {
     let Some(verdict) = a.verdict() else {
         return Ok(broken(seed, &a));
     };
@@ -205,19 +210,11 @@ fn fresh(root: &Path, sim: &Sim, seed: &str, reach: &mut Reach) -> Result<Value,
     Ok(report(seed, &record, Value::Null))
 }
 
-/// A kept seed, run again. Its steps as kept: the run is the same. Otherwise
+/// A kept seed, run again as `a`. Its steps as kept: the run is the same. Otherwise
 /// it runs once more: two runs that differ are nondeterminism; two alike are
 /// the system's code changed since, and they replace the kept steps.
-fn rerun(
-    root: &Path,
-    sim: &Sim,
-    seed: &str,
-    k: &Value,
-    reach: &mut Reach,
-) -> Result<Value, Vec<Value>> {
+fn rerun(root: &Path, sim: &Sim, seed: &str, k: &Value, a: Run) -> Result<Value, Vec<Value>> {
     let then = k["lines"].as_array().cloned().unwrap_or_default();
-    let a = once(root, sim, seed)?;
-    note(reach, seed, &a.lines);
     let Some(verdict) = a.verdict() else {
         return Ok(broken(seed, &a));
     };
@@ -374,13 +371,11 @@ pub fn tasks(root: &Path) -> Vec<Value> {
 
 /// Notes each invariant a run's steps name in their `checked`.
 fn note(reach: &mut Reach, seed: &str, lines: &[Value]) {
-    let mut names: Vec<&str> = lines
+    let names: std::collections::BTreeSet<&str> = lines
         .iter()
         .flat_map(|l| l["checked"].as_array().into_iter().flatten())
         .filter_map(Value::as_str)
         .collect();
-    names.sort();
-    names.dedup();
     for n in names {
         reach.entry(n.into()).or_insert((0, seed.into())).0 += 1;
     }

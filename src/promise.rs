@@ -114,15 +114,16 @@ pub fn faults(config: &Config) -> Vec<Value> {
 /// `truefit promise [--mark <hash> <promise|not> ...]`.
 pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
     let config = contract::load(root)?;
+    let found = sentences(root, &config);
     if !marks.is_empty() {
-        mark(root, &config, marks)?;
+        mark(root, &found, marks)?;
     }
     let promises: Vec<Value> = config
         .promise
         .iter()
         .map(|p| status(root, &config, p))
         .collect();
-    let (unmarked, unregistered, found) = candidates(root, &config);
+    let (unmarked, unregistered) = candidates(root, &config, &found);
     let failing = |s: &str| promises.iter().filter(|p| p["status"] == s).count();
     let mut next = Vec::new();
     if failing("unreached") > 0 {
@@ -140,7 +141,7 @@ pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
     }
     let report = json!({
         "promises": promises,
-        "candidates": {"found": found, "unmarked": unmarked, "unregistered": unregistered},
+        "candidates": {"found": found.len(), "unmarked": unmarked, "unregistered": unregistered},
         "next": next.join("; "),
     });
     Ok((report, ok))
@@ -148,22 +149,22 @@ pub fn run(root: &Path, marks: &[&str]) -> Result<(Value, bool), Vec<Value>> {
 
 /// One promise's status: `kept`, `unchecked`, `unreached` or `checked`.
 fn status(root: &Path, config: &Config, p: &Promise) -> Value {
-    let rungs: Vec<&str> = p.checks().iter().map(|(r, _)| *r).collect();
+    let checks = p.checks();
+    let has = |rung: &str| checks.iter().any(|(r, _)| *r == rung);
     let mut report = json!({"name": p.name, "says": p.says, "source": p.source, "check": p.check});
     let (status, why) = if let Some(kept) = &p.kept {
         ("kept", kept.clone())
     } else if p.check.is_empty() {
         ("unchecked", "no check keeps it, and it is not kept".into())
     } else if p.concurrent()
-        && !(rungs.contains(&"sim") && rungs.contains(&"model"))
+        && !(has("sim") && has("model"))
         && p.why.as_deref().is_none_or(|w| w.trim().is_empty())
     {
         ("unchecked", "it is about what runs at once or in an order the system does not choose: it needs both `sim` and `model`, or a `why` for a cheaper check".into())
     } else {
-        let unreached: Vec<String> = p
-            .checks()
-            .into_iter()
-            .filter_map(|(rung, arg)| match rung {
+        let unreached: Vec<String> = checks
+            .iter()
+            .filter_map(|&(rung, arg)| match rung {
                 "sim" => crate::sim::unreached(root, &p.name, config.contract.fresh_days),
                 "model" => crate::model::unreached(root, &config.model, arg, &p.name),
                 _ => None,
@@ -193,14 +194,13 @@ pub fn same_name(a: &str, b: &str) -> bool {
     key(a) == key(b)
 }
 
-/// The candidates no mark and no registered promise answers, those marked
-/// `promise` that none registers, and how many were found in all.
-fn candidates(root: &Path, config: &Config) -> (Vec<Value>, Vec<Value>, usize) {
+/// Of the candidates `found`, those no mark and no registered promise
+/// answers, and those marked `promise` that none registers.
+fn candidates(root: &Path, config: &Config, found: &[Value]) -> (Vec<Value>, Vec<Value>) {
     let marks = contract::read(root, MARKS);
     let says: Vec<String> = config.promise.iter().map(|p| plain(&p.says)).collect();
     let (mut unmarked, mut unregistered) = (Vec::new(), Vec::new());
-    let found = sentences(root, config);
-    for c in &found {
+    for c in found {
         let text = plain(c["sentence"].as_str().unwrap_or(""));
         if says
             .iter()
@@ -214,7 +214,7 @@ fn candidates(root: &Path, config: &Config) -> (Vec<Value>, Vec<Value>, usize) {
             None => unmarked.push(c.clone()),
         }
     }
-    (unmarked, unregistered, found.len())
+    (unmarked, unregistered)
 }
 
 /// Every sentence in `[promises] sources` with a promise word, as a candidate.
@@ -327,8 +327,7 @@ fn hash(sentence: &str) -> String {
 }
 
 /// Records each `<hash> <promise|not>` pair given to `--mark`.
-fn mark(root: &Path, config: &Config, pairs: &[&str]) -> Result<(), Vec<Value>> {
-    let found = sentences(root, config);
+fn mark(root: &Path, found: &[Value], pairs: &[&str]) -> Result<(), Vec<Value>> {
     let mut marks = contract::read(root, MARKS);
     if !marks.is_object() {
         marks = json!({});
@@ -366,7 +365,7 @@ fn mark(root: &Path, config: &Config, pairs: &[&str]) -> Result<(), Vec<Value>> 
 /// The `unregistered-promise`, `unchecked-promise` and `unreached-promise` tasks.
 pub fn tasks(root: &Path, config: &Config) -> Vec<Value> {
     let mut tasks = Vec::new();
-    let (unmarked, unregistered, _) = candidates(root, config);
+    let (unmarked, unregistered) = candidates(root, config, &sentences(root, config));
     if !unmarked.is_empty() || !unregistered.is_empty() {
         tasks.push(json!({
             "kind": "unregistered-promise",
