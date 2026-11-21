@@ -1,0 +1,33 @@
+{
+  "tree": "8d88dd0263ce1c5048885e0593a42009c2f65744+d1fba762150c532c",
+  "picker": "codex:01a1fc39-efcc-7a11-ae05-b73a9db30598:default",
+  "author": "claude-code:88acd32b-43aa-58e5-9e53-ff90469c7ca8:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/contract.rs:43:5: replace default_fresh_days -> u64 with 1",
+        "why": "The older-record test explicitly sets 30 days, and the test that uses the default checks a record written the same day.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/next.rs:99:16: replace > with >= in stale",
+        "why": "The tests check a record written today and one far beyond the limit, leaving the exact freshness boundary untested.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/next.rs:147:58: replace && with || in expand",
+        "why": "The only glob with a leading dot component matches a declared stand-in, so canonicalization can hide the change in the reported path.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/contract.rs:506:57: replace || with && in days",
+        "why": "The invalid-date tests omit out-of-range days, and the final checked subtraction still rejects the tested pre-epoch date.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      }
+    ]
+  }
+}
