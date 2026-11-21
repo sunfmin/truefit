@@ -1,0 +1,4 @@
+{"step":1,"event":"apply 1, ack","state":{"applied":[1,0,0],"next":2,"worker":"w0"},"checked":[]}
+{"step":2,"event":"apply 2, crash","state":{"applied":[1,1,0],"next":2,"worker":"w1"},"checked":[]}
+{"step":3,"event":"apply 2, ack","state":{"applied":[1,2,0],"next":3,"worker":"w1"},"checked":["applied-once"]}
+{"verdict":"fail","invariant":"applied-once","step":3}
