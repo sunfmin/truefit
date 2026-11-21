@@ -718,4 +718,14 @@ mod tests {
         );
         assert_eq!((r.states, r.depth), (Some(4), Some(3)));
     }
+
+    #[test]
+    fn a_value_tlc_wraps_stays_its_variables_even_where_it_holds_an_equals_sign() {
+        let out =
+            "State 1: <Initial predicate>\n/\\ log = <<\"a = b\",\n   \"c = d\">>\n/\\ x = 1\n\n";
+        assert_eq!(
+            read(out).behaviour[0]["state"],
+            json!({"log": "<<\"a = b\", \"c = d\">>", "x": "1"})
+        );
+    }
 }

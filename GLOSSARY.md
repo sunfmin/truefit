@@ -6,5 +6,6 @@
 - **Simulation**: the system's own code run step by step against stand-ins, its order of events and faults chosen from a **seed**; a failing seed reruns exactly.
 - **Model**: a specification of the system's design (TLA+), checked by a model checker within bounds.
 - **Trace**: what a real or simulated run recorded, checked as a behaviour of the model.
+- **Coverage record**: which code each of a model's actions stands for (file and function), and the commit at which the model was last confirmed to describe it. Code changed since makes the model stale.
 - **Invariant**: a property every state must hold; one home, used by the model, the simulation and the code's own checks.
 - **Tie**: any of the above that binds a test or a model to the real system.

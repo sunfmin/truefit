@@ -796,6 +796,13 @@ fn model_sample(tag: &str, seeds: &[&str]) -> PathBuf {
 #[test]
 fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
     let dir = model_sample("model", &[]);
+    // Without its `limit`, a model has 300 seconds.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let toml: Vec<&str> = toml
+        .lines()
+        .filter(|l| !l.starts_with("limit = "))
+        .collect();
+    std::fs::write(dir.join("truefit.toml"), toml.join("\n")).unwrap();
     let (code, out) = truefit_in(&dir, &["model"]);
     assert_eq!(code, Some(0), "{out:#}");
     let queue = &out["models"][0];
@@ -804,6 +811,7 @@ fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
         (&"queue".into(), &"passes".into())
     );
     assert_eq!((&queue["states"], &queue["depth"]), (&7.into(), &4.into()));
+    assert_eq!(queue["limit"], 300);
     assert_eq!(out["tlc"]["version"], "1.7.4");
     assert!(
         out["tlc"]["jar"]
@@ -911,6 +919,7 @@ fn a_model_past_its_limit_is_timed_out() {
     let (code, out) = truefit_in(&dir, &["model"]);
     assert_eq!(code, Some(1), "{out:#}");
     assert_eq!(out["models"][0]["result"], "timed out");
+    assert!(out["models"][0]["output"].is_string(), "{out:#}");
     assert!(start.elapsed().as_secs() < 10);
     assert!(out["next"].as_str().unwrap().contains("bounds smaller"));
 }
@@ -1030,6 +1039,11 @@ fn model_faults_exit_2() {
         (config("model-none", ""), vec!["model"], "no [[model]]"),
         (
             config("model-uncovered", &model("m", "")),
+            vec!["model"],
+            "has no coverage record",
+        ),
+        (
+            config("model-commit-only", &model("m", "commit = \"x\"\n")),
             vec!["model"],
             "has no coverage record",
         ),
