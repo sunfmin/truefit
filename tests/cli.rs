@@ -456,6 +456,14 @@ fn sim_finds_the_sample_bug_keeps_its_seed_and_reruns_it_step_for_step() {
     assert_eq!(out["new"]["ran"], 10);
     let found = failing(&out);
     assert_eq!(out["new"]["passed"], 10 - found.len(), "{out:#}");
+    let named: Vec<&Value> = out["new"]["seeds"].as_array().unwrap().iter().collect();
+    assert_eq!(named.len(), 10, "{out:#}");
+    let fails: Vec<&Value> = named
+        .iter()
+        .filter(|s| s["result"] == "fails")
+        .map(|s| &s["seed"])
+        .collect();
+    assert_eq!(fails, found.iter().map(|f| &f["seed"]).collect::<Vec<_>>());
     assert!(
         !found.is_empty(),
         "three in four of the sample's seeds fail"
@@ -624,10 +632,24 @@ fn sim_runs_new_seeds_by_count_or_budget_and_stops_at_a_run_without_a_verdict() 
     verdict("{\"verdict\":\"pass\"}\n");
     let (code, out) = truefit_in(&dir, &["sim"]);
     assert_eq!(code, Some(0), "{out:#}");
+    let new = &out["new"];
     assert_eq!(
-        out["new"],
-        serde_json::json!({"ran": 3, "passed": 3, "failing": []})
+        (&new["ran"], &new["passed"], &new["failing"]),
+        (&3.into(), &3.into(), &serde_json::json!([]))
     );
+    let seeds = new["seeds"].as_array().unwrap();
+    assert_eq!(seeds.len(), 3, "every new seed is named: {out:#}");
+    for s in seeds {
+        assert_eq!(s["result"], "passes");
+        let (code, again) = truefit_in(&dir, &["sim", "--seed", s["seed"].as_str().unwrap()]);
+        assert_eq!(
+            (code, &again["seed"]["result"]),
+            (Some(0), &"passes".into()),
+            "{again:#}"
+        );
+    }
+    let (_, out) = truefit_in(&dir, &["sim", "--seeds", "2"]);
+    assert_eq!(out["new"]["seeds"].as_array().unwrap().len(), 2, "{out:#}");
     assert!(out["next"].as_str().unwrap().starts_with("nothing"));
     let (_, out) = truefit_in(&dir, &["sim", "--budget", "0"]);
     assert_eq!(out["new"]["ran"], 1, "a budget runs at least one seed");

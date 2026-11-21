@@ -98,9 +98,12 @@ reruns exactly.
 
 - `truefit sim [--seeds N | --budget <seconds>]`: reruns every kept seed
   first, as regressions, then runs new seeds: `[sim] seeds` of them, `N`, or
-  as many as fit in the budget (at least one). Each new seed that fails is
-  run a second time and kept in `.truefit/seeds/<seed>.json` with its verdict
-  and every line it printed; each is printed with its `rerun` command. Commit
+  as many as fit in the budget (at least one). `new.seeds` names every new
+  seed it ran, each with its `result`, so a later step (a trace check of
+  each) can run them again by `truefit sim --seed <s>`. Each new seed that
+  fails is run a second time and kept in `.truefit/seeds/<seed>.json` with
+  its verdict and every line it printed; `new.failing` holds its full
+  report, printed with its `rerun` command. Commit
   `.truefit/seeds/`: kept seeds are the repo's, not one host's.
 - `truefit sim --seed <s>`: reruns one seed. A kept one is compared with its
   kept lines. When they differ it runs once more: two reruns that differ are

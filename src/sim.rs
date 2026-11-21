@@ -81,7 +81,7 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
     }
     let kept_reports = reports.len();
     let (start, base) = (Instant::now(), entropy());
-    let (mut ran, mut passed) = (0, 0);
+    let (mut ran, mut passed, mut seeds) = (0, 0, Vec::new());
     while match &ask {
         Ask::Run(Some(New::Budget(d))) => ran == 0 || start.elapsed() < *d,
         Ask::Run(Some(New::Seeds(n))) => ran < *n,
@@ -89,6 +89,7 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
     } {
         let r = fresh(root, &sim, &new_seed(base, ran))?;
         ran += 1;
+        seeds.push(json!({"seed": r["seed"], "result": r["result"]}));
         if r["result"] == "passes" {
             passed += 1;
             continue;
@@ -104,7 +105,7 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
     let ok = reports.iter().all(|r| r["result"] == "passes");
     let failing = reports.split_off(kept_reports);
     Ok((
-        json!({"kept": reports, "new": {"ran": ran, "passed": passed, "failing": failing}, "next": next}),
+        json!({"kept": reports, "new": {"ran": ran, "passed": passed, "seeds": seeds, "failing": failing}, "next": next}),
         ok,
     ))
 }
