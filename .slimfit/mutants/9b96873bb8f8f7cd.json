@@ -1,0 +1,6 @@
+{
+  "tree": "95440491f6177fccced1785b92b66adb6c2e50de+d1fba762150c532c",
+  "picker": "codex:01a1fc2b-1119-7f80-80ed-6d7bf1295291:default",
+  "author": "claude-code:9fd564b1-e7a7-5418-9330-02209f0dc164:opus",
+  "none": "The only mutant removes all CLI output, so the new --version test kills it by checking for the version prefix."
+}
