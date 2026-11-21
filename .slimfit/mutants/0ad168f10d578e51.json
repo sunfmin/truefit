@@ -1,0 +1,39 @@
+{
+  "tree": "045e0f207f20cd4d776d63680dd5b24ec60ec964+d1fba762150c532c",
+  "picker": "codex:01a1fd25-15fc-7601-9f0a-9d4719153fa9:default",
+  "author": "claude-code:325cadf2-f172-51da-9d24-b74a6be1c555:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/promise.rs:160:25: replace && with || in status",
+        "why": "The concurrent fixtures declare both required checks or neither, so accepting just one could pass.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/promise.rs:135:29: replace || with && in run",
+        "why": "The candidate fixture has failing promises of its own, which can mask an incorrect success when only one candidate backlog is nonempty.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/promise.rs:99:17: delete match arm \"contract\" in faults",
+        "why": "The validation test uses an unknown stand-in, so rejecting a contract check that names a declared stand-in could pass.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/promise.rs:41:5: replace default_sources -> Vec<String> with vec![]",
+        "why": "The candidate fixture sets its sources explicitly, so silently dropping the default document scan could pass.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/sim.rs:388:12: replace > with >= in unreached",
+        "why": "The freshness test covers a current record and a much older one, leaving a record exactly fresh_days old untested.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}

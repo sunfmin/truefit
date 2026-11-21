@@ -1,0 +1,10 @@
+{
+  "tree": "045e0f207f20cd4d776d63680dd5b24ec60ec964+d1fba762150c532c",
+  "lines": 444,
+  "serves": "truefit#8",
+  "considered": "next::expand for the source globs, contract::read/write for the marks and the sim record, model.rs KEYWORDS (hoisted from constants) for reading INVARIANT sections, the existing sim run loop for collecting checked names; a promise word list as data, not code paths",
+  "reviewer": "codex:01a1fd23-6fd7-7641-bfd2-61bfb1c0d2f3:default",
+  "author": "claude-code:325cadf2-f172-51da-9d24-b74a6be1c555:opus",
+  "cut": "src/promise.rs: scan candidate sentences once and reuse that list for marking and reporting, then reuse one sorted check list for ladder enforcement and reachability and drop the separate rung vector. src/sim.rs: collect reach at the shared first run of each seed and pass that run to fresh or rerun, removing the accumulator from both helpers, and collect checked names into a set instead of sorting and deduplicating a vector. tests/cli.rs: compare borrowed name and status strings directly with the expected pairs and delete the owned-string conversions.",
+  "answer": "Made all three (2b6bb97): sentences scanned once in run and passed to mark and candidates; status keeps one checks list; sim has one seed_run that runs once, notes reach and hands the run to fresh or rerun; checked names into a BTreeSet; tests compare borrowed pairs. Also folded the three .truefit write-fault closures into contract::save (045e0f2)."
+}
