@@ -43,6 +43,9 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
         }
     }
     tasks.extend(crate::sim::tasks(root));
+    let (stale, unseen) = crate::model::tasks(root, &config.model);
+    tasks.extend(stale);
+    notes.extend(unseen);
     let mut counts = serde_json::Map::new();
     for t in &tasks {
         let n = counts
@@ -52,7 +55,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     }
     let next = match (tasks.is_empty(), all) {
         (true, _) => {
-            "nothing: every declared stand-in's contract is fresh, none is without one, and no kept seed fails"
+            "nothing: every declared stand-in's contract is fresh, none is without one, no kept seed fails, and no model's covered code changed since its commit"
         }
         (false, true) => "do each task by its steps, then run its accept command and commit",
         (false, false) => "do the task by its steps, then run its accept command and commit",

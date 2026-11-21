@@ -1,0 +1,10 @@
+{
+  "tree": "c252107188b232d5fc09e6270ca59d41b0403fec+d1fba762150c532c",
+  "lines": 653,
+  "serves": "truefit#7: truefit model, TLA+ models checked by a pinned TLC and run records checked as traces, with stale-model in truefit next",
+  "considered": "contract::scratch, fault, find, write and load; next.rs's task shape; sim.rs's kept-seed records as traces; a separate trace config file per model (not taken: derived from the model's config)",
+  "reviewer": "claude-code:a3e8565b41342e89e:opus",
+  "author": "claude-code:b7ea0bc1-fe65-539d-8ee8-3b0f997d84c7:opus",
+  "cut": "model.rs: KEYWORDS array as one split string; workdir repeats contract::scratch, make it pub and delete workdir; check and check_trace repeat work dir, lib, run, cleanup, read and the completed literal: move them into run_tlc returning Read and completed",
+  "answer": "made all three: constants splits one keyword string, workdir only maps contract::scratch's error, run_tlc takes the work dir, finds the library, removes the dir and returns read and completed"
+}

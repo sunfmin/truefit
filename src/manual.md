@@ -157,6 +157,129 @@ applying a message and acking it, with a bug some seeds reach (a crashed
 message is applied twice), and `sim-nondeterministic`, the same made
 nondeterministic on purpose (a restarted worker named by its process id).
 
+## `truefit model`
+
+The system's models (TLA+), checked by TLC, and its runs checked as traces
+of them.
+
+- `truefit model [<name>]`: checks every declared model (or one) with TLC,
+  each within its `limit`. Each report has its `result` (`passes`, `fails`,
+  `timed out`, `broken`), `states` (distinct) and `depth`, and `seconds`. A
+  model that fails has TLC's `error` (`Invariant AppliedOnce is violated.`)
+  and the `behaviour` that reaches it: each state with the `action` that
+  took it there and its variables. One that is `broken` (TLC could not parse
+  or evaluate it) or `timed out` has the `output` TLC printed from its first
+  error. Cheap when the bounds are small: put it in the gate.
+- `truefit model [<name>] --trace <file>`: checks a run's records as a
+  behaviour of the model that declares a `[model.trace]` mapping (name it
+  when more than one does). The records are the file's JSON lines that have
+  a `step` (the simulation's step lines, or a real run's in the same shape;
+  other lines are skipped), or the `lines` of a kept seed
+  (`.truefit/seeds/<seed>.json`). From the model's initial state, each
+  record must be one step of its next-state action, with every mapped
+  variable equal to the record's; unmapped variables may take any value the
+  model allows (TLC tries each). `allowed`: the model has a behaviour that is
+  this run. `disallowed`: the first `record` no step of the model reaches
+  (`step`, the record's own), with the last allowed record, `after` (null:
+  the first record is disallowed). `broken`: TLC could not evaluate the
+  mapping on a record (`output`: a field the record lacks, say). The trace
+  check asks only whether the model allows the run; the model's properties
+  are `truefit model`'s.
+
+It exits 0 when every model passes (or the trace is allowed), 1 when not.
+
+TLC is the one release truefit pins, its `tla2tools.jar` checked against
+the pinned SHA-256 (each report's `tlc` names both, and the jar). truefit
+downloads it once from the official release into
+`~/.local/share/truefit/tlc/<version>/`; set `TRUEFIT_TLC_FROM` to a URL (or
+`file://` path) of a copy of that release where GitHub is out of reach: one
+whose checksum differs is refused. TLC runs on `java` (11 or later) on PATH.
+It runs in a temporary directory; nothing is written in the repo.
+
+### `[[model]]` in `truefit.toml`
+
+```toml
+[[model]]
+name = "queue"             # what `truefit model <name>` names
+spec = "models/Queue.tla"  # relative to truefit.toml; modules it EXTENDS beside it
+config = "models/Queue.cfg" # TLC's config: CONSTANTS, SPECIFICATION, INVARIANT ...
+limit = 60                 # seconds TLC may take on it (default 300)
+init = "Init"              # the initial predicate and next-state action
+next = "Next"              #   a trace is checked against (these are the defaults)
+# The coverage record: the code each action (or property) stands for, and
+# the commit at which you last confirmed the model describes it.
+commit = "42a65a58620cc50dc65af3c1ed5884a887984259"
+covers = [
+  { action = "ApplyAck", file = "src/worker.rs", function = "Worker::ack" },
+]
+
+# The model's variables, each a TLA+ expression over one record `r`
+# (JSON objects are records, arrays sequences; other numbers and null are
+# strings, and keys that are no TLA+ name are left out).
+[model.trace]
+applied = "r.state.applied"
+head = "r.state.next"
+```
+
+A trace's check keeps the config's CONSTANT sections and replaces the rest.
+
+### What to model
+
+truefit does not write the model; the system's repo does. Model the design
+where a bug costs the most and tests reach the least: what runs at once or
+in an order the system does not choose (workers, retries, crashes and
+restarts, messages lost or delivered twice, a lease that expires), where
+every order of events must keep a promise (exactly once, no lost update,
+one leader, a queue that drains). Not what one function computes: a test
+or a verifier on the code does that better.
+
+- One action for each step the code takes as one indivisible step, named
+  as the code names it; a step the code can be interrupted in the middle
+  of is two actions. Each action is in `covers`, with the file and
+  function it stands for.
+- Variables for the state those steps read and write, no more; constants
+  for the sizes (messages, workers), as small as still finds the bugs
+  (two or three of each, mostly). A model TLC cannot finish within its
+  `limit` needs smaller bounds, not a larger limit.
+- The faults the real world brings (a crash between two steps, a message
+  lost, a timeout) as actions of their own.
+
+### How to write its properties
+
+- An invariant states, of every state, the promise in one sentence of the
+  system's words (`AppliedOnce == \A m \in 1..N : applied[m] <= 1`: no
+  message is applied twice), and has one home: the simulation's and the
+  code's own checks state the same, by the same name.
+- A type invariant (`TypeOK`) catches a modelling error early; it is not
+  the promise.
+- A property you have not seen fail proves nothing: break the model as the
+  code could break (drop a check, swap two steps) and see TLC find it, then
+  put it back.
+- When TLC finds a behaviour that breaks a property, read it in the
+  system's words: a bug in the design (fix the code and the model alike)
+  or a modelling error (fix the model). Never weaken the property to pass.
+- Map the records the simulation (and the real system) prints to the
+  model's variables in `[model.trace]`, and check its runs with
+  `--trace`: a run the model does not allow means the model and the code
+  disagree, at that step.
+
+Where pstack's `create-formal-verification-skill` is installed
+(`~/.claude/skills/` or `~/.agents/skills/`), run
+`/create-formal-verification-skill` to choose the target and write the
+model with it, then declare that model here; its
+`maintain-formal-verification-skill` brings one back in line.
+
+`testdata/sim/` is a worked example: `Queue.tla`, the queue's design (the
+worker marks a message done when it applies it, so a redelivery is not
+applied again), passes; the simulation's runs are its traces. Seed 1 runs
+every message once, `allowed`; seed 3 crashes after applying message 2 and
+applies it again when it is redelivered, `disallowed` at step 3:
+
+```sh
+./sim 1 > ok.jsonl  && truefit model --trace ok.jsonl   # allowed
+./sim 3 > bad.jsonl && truefit model --trace bad.jsonl  # disallowed, step 3
+```
+
 ## `truefit next [--all]`
 
 What to do about the repo's ties: the next task (`task`), or with `--all`
@@ -166,7 +289,8 @@ every one (`tasks`), each with its `kind`, `summary`, `files`, `evidence`,
 one task by its steps, run its accept command, commit, then `truefit next`
 again. No task is an answer: every tie is fresh. It exits 0 with tasks or
 without, 2 on a fault in `truefit.toml`. It runs each stand-in's `version`
-command, never a case, and reads kept seeds without running the simulation.
+command, never a case, reads kept seeds without running the simulation, and
+compares models' coverage with git, never running TLC.
 
 - `no-contract`: a file under `[contract] standins` (paths, or globs whose
   `*` and `?` match within one path part; a directory stands for its files)
@@ -182,12 +306,11 @@ command, never a case, and reads kept seeds without running the simulation.
   first line they differ at: make the simulation choose all from the seed.
 - `failing-seed`: a kept seed that failed when last run: fix the bug it
   reaches.
+- `stale-model`: a model whose covered files (`covers`) changed since the
+  `commit` its coverage record names, or whose `commit` this repo's history
+  lacks: bring the model in line with the code, check it, and move `commit`
+  forward. Outside a git repo it is not looked for, and `notes` says so.
 
 The answer has the shape of `slimfit next --all`'s, so a factorium
 `[idle]` tasks line files its tasks as issues, one open issue per kind:
 `tasks = "slimfit --version && slimfit next --all && truefit next --all"`.
-
-## To come
-
-- `truefit model`: the system's models, and its real runs checked as traces of
-  them.

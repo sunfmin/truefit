@@ -778,3 +778,323 @@ fn sim_faults_exit_2() {
         assert!(out["error"][0]["fix"].is_string());
     }
 }
+
+/// `testdata/sim` copied, with `./sim <seed>`'s records written to `<seed>.jsonl` there.
+fn model_sample(tag: &str, seeds: &[&str]) -> PathBuf {
+    let dir = sample("sim", tag);
+    for seed in seeds {
+        let out = Command::new("./sim")
+            .arg(seed)
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        std::fs::write(dir.join(format!("{seed}.jsonl")), out.stdout).unwrap();
+    }
+    dir
+}
+
+#[test]
+fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
+    let dir = model_sample("model", &[]);
+    // Without its `limit`, a model has 300 seconds.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let toml: Vec<&str> = toml
+        .lines()
+        .filter(|l| !l.starts_with("limit = "))
+        .collect();
+    std::fs::write(dir.join("truefit.toml"), toml.join("\n")).unwrap();
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    let queue = &out["models"][0];
+    assert_eq!(
+        (&queue["name"], &queue["result"]),
+        (&"queue".into(), &"passes".into())
+    );
+    assert_eq!((&queue["states"], &queue["depth"]), (&7.into(), &4.into()));
+    assert_eq!(queue["limit"], 300);
+    assert_eq!(out["tlc"]["version"], "1.7.4");
+    assert!(
+        out["tlc"]["jar"]
+            .as_str()
+            .unwrap()
+            .ends_with(".local/share/truefit/tlc/1.7.4/tla2tools.jar")
+    );
+    // The design's bug, put in the model: a redelivered message is applied again.
+    let spec = std::fs::read_to_string(dir.join("Queue.tla")).unwrap();
+    std::fs::write(
+        dir.join("Queue.tla"),
+        spec.replace("IF head \\in done", "IF FALSE"),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["model", "queue"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let queue = &out["models"][0];
+    assert_eq!(queue["result"], "fails");
+    assert_eq!(queue["error"], "Invariant AppliedOnce is violated.");
+    let behaviour = queue["behaviour"].as_array().unwrap();
+    assert_eq!(behaviour[0]["action"], "Initial predicate");
+    assert!(
+        behaviour[1]["action"]
+            .as_str()
+            .unwrap()
+            .starts_with("ApplyCrash")
+    );
+    assert_eq!(behaviour.last().unwrap()["state"]["applied"], "<<2, 0, 0>>");
+    assert!(queue["output"].is_null());
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .contains("never weaken the property")
+    );
+}
+
+#[test]
+fn a_trace_the_model_allows_passes_and_one_it_does_not_names_its_first_disallowed_step() {
+    // Seed 1 runs every message once; seed 3 crashes after applying message
+    // 2 and, redelivered, applies it again at step 3.
+    let dir = model_sample("trace", &["1", "3"]);
+    let (code, out) = truefit_in(&dir, &["model", "--trace", "1.jsonl"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["trace"]["result"], "allowed");
+    assert_eq!(out["trace"]["records"], 3);
+    let (code, out) = truefit_in(&dir, &["model", "queue", "--trace", "3.jsonl"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let t = &out["trace"];
+    assert_eq!(
+        (&t["result"], &t["step"], &t["records"]),
+        (&"disallowed".into(), &3.into(), &4.into())
+    );
+    assert_eq!(t["record"]["event"], "apply 2, ack");
+    assert_eq!(t["after"]["event"], "apply 2, crash");
+    // A kept seed is a trace as it is.
+    let (code, _) = truefit_in(&dir, &["sim", "--seed", "3"]);
+    assert_eq!(code, Some(1));
+    let (code, out) = truefit_in(&dir, &["model", "--trace", ".truefit/seeds/3.json"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["trace"]["step"], 3);
+    // Its first record disallowed: nothing after.
+    std::fs::write(
+        dir.join("first.jsonl"),
+        r#"{"step":1,"state":{"applied":[0,1,0],"next":1}}"#,
+    )
+    .unwrap();
+    let (_, out) = truefit_in(&dir, &["model", "--trace", "first.jsonl"]);
+    assert_eq!(
+        (&out["trace"]["step"], &out["trace"]["after"]),
+        (&1.into(), &Value::Null),
+        "{out:#}"
+    );
+    // A mapping TLC cannot read a record by is broken, not disallowed.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    std::fs::write(
+        dir.join("truefit.toml"),
+        toml.replace("r.state.next", "r.state.nope"),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["model", "--trace", "1.jsonl"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["trace"]["result"], "broken");
+    assert!(
+        out["trace"]["output"].as_str().unwrap().contains("nope"),
+        "{out:#}"
+    );
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .starts_with("correct [model.trace]")
+    );
+}
+
+#[test]
+fn a_model_past_its_limit_is_timed_out() {
+    let dir = config(
+        "model-limit",
+        "[[model]]\nname = \"count\"\nspec = \"Count.tla\"\nconfig = \"Count.cfg\"\nlimit = 1\ncommit = \"x\"\ncovers = [{ action = \"Next\", file = \"c\", function = \"f\" }]\n",
+    );
+    std::fs::write(dir.join("Count.tla"), "---- MODULE Count ----\nEXTENDS Naturals\nVARIABLE x\nInit == x = 0\nNext == x' = x + 1\n====\n").unwrap();
+    std::fs::write(dir.join("Count.cfg"), "INIT Init\nNEXT Next\n").unwrap();
+    let start = std::time::Instant::now();
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["models"][0]["result"], "timed out");
+    assert!(out["models"][0]["output"].is_string(), "{out:#}");
+    assert!(start.elapsed().as_secs() < 10);
+    assert!(out["next"].as_str().unwrap().contains("bounds smaller"));
+}
+
+#[test]
+fn tlc_whose_checksum_is_not_the_pinned_one_is_not_installed() {
+    let home = config("model-home", "");
+    let bad = home.join("bad.jar");
+    std::fs::write(&bad, "not TLC").unwrap();
+    let dir = model_sample("model-bad-tlc", &[]);
+    let out = Command::new(env!("CARGO_BIN_EXE_truefit"))
+        .arg("model")
+        .current_dir(&dir)
+        .env("HOME", &home)
+        .env("TRUEFIT_TLC_FROM", format!("file://{}", bad.display()))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let out: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let fault = out["error"][0]["fault"].as_str().unwrap();
+    assert!(
+        fault.contains("its SHA-256 is") && fault.contains("936a2620"),
+        "{out:#}"
+    );
+    let tlc = home.join(".local/share/truefit/tlc/1.7.4");
+    assert_eq!(std::fs::read_dir(tlc).unwrap().count(), 0);
+}
+
+#[test]
+fn next_gives_a_stale_model_once_its_covered_code_changes_after_its_commit() {
+    let dir = model_sample("stale", &[]);
+    let (code, out) = truefit_in(&dir, &["next"]);
+    assert_eq!(code, Some(0));
+    assert!(
+        out["notes"][1].as_str().unwrap().contains("in no git repo"),
+        "{out:#}"
+    );
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&["commit", "-qm", "one"]);
+    let one = git(&["rev-parse", "HEAD"]);
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let toml = with_commit(&toml, &one);
+    std::fs::write(dir.join("truefit.toml"), &toml).unwrap();
+    git(&["commit", "-qam", "confirm the model at one"]);
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert_eq!(out["tasks"], serde_json::json!([]), "{out:#}");
+    let awk = std::fs::read_to_string(dir.join("queue.awk")).unwrap();
+    std::fs::write(dir.join("queue.awk"), awk + "# a change\n").unwrap();
+    let (_, out) = truefit_in(&dir, &["next"]);
+    let task = &out["task"];
+    assert_eq!(task["kind"], "stale-model", "{out:#}");
+    assert_eq!(
+        task["summary"],
+        format!("model queue: queue.awk changed since {one}")
+    );
+    assert_eq!(
+        task["evidence"]["changed"][0]["covers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(task["accept"], "truefit model queue");
+    std::fs::write(dir.join("truefit.toml"), with_commit(&toml, "0000000")).unwrap();
+    let (_, out) = truefit_in(&dir, &["next"]);
+    assert!(
+        out["task"]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("is not in this repo's history"),
+        "{out:#}"
+    );
+}
+
+/// `toml` with its model's `commit` set to `commit`.
+fn with_commit(toml: &str, commit: &str) -> String {
+    toml.lines()
+        .map(|l| {
+            if l.starts_with("commit = ") {
+                format!("commit = \"{commit}\"")
+            } else {
+                l.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn model_faults_exit_2() {
+    let covers = "commit = \"x\"\ncovers = [{ action = \"A\", file = \"f\", function = \"g\" }]\n";
+    let model = |name: &str, extra: &str| {
+        format!("[[model]]\nname = \"{name}\"\nspec = \"M.tla\"\nconfig = \"M.cfg\"\n{extra}")
+    };
+    let traced = config(
+        "model-traced",
+        &(model("a", covers)
+            + "[model.trace]\nx = \"r.x\"\n"
+            + &model("b", covers)
+            + "[model.trace]\nx = \"r.x\"\n"),
+    );
+    std::fs::write(traced.join("t.jsonl"), "{\"step\":1}\n").unwrap();
+    std::fs::write(traced.join("none.jsonl"), "{\"verdict\":\"pass\"}\n").unwrap();
+    let plain = config("model-plain", &model("m", covers));
+    for (dir, args, says) in [
+        (config("model-none", ""), vec!["model"], "no [[model]]"),
+        (
+            config("model-uncovered", &model("m", "")),
+            vec!["model"],
+            "has no coverage record",
+        ),
+        (
+            config("model-commit-only", &model("m", "commit = \"x\"\n")),
+            vec!["model"],
+            "has no coverage record",
+        ),
+        (
+            config("model-twice", &(model("m", covers) + &model("m", covers))),
+            vec!["model"],
+            "declared twice",
+        ),
+        (
+            config("model-zero", &model("m", &format!("{covers}limit = 0\n"))),
+            vec!["model"],
+            "limit of 0",
+        ),
+        (plain.clone(), vec!["model", "other"], "no model `other`"),
+        (
+            plain.clone(),
+            vec!["model", "--trace", "t.jsonl"],
+            "no model declares a [model.trace]",
+        ),
+        (plain.clone(), vec!["model", "m"], "is not found"),
+        (
+            plain.clone(),
+            vec!["model", "--frob"],
+            "not a model command",
+        ),
+        (
+            plain.clone(),
+            vec!["model", "--frob", "--trace", "t.jsonl"],
+            "not a model command",
+        ),
+        (plain, vec!["model", "m", "--trace"], "not a model command"),
+        (
+            traced.clone(),
+            vec!["model", "--trace", "t.jsonl"],
+            "more than one model",
+        ),
+        (
+            traced.clone(),
+            vec!["model", "a", "--trace", "gone.jsonl"],
+            "cannot read trace",
+        ),
+        (
+            traced,
+            vec!["model", "a", "--trace", "none.jsonl"],
+            "holds no record",
+        ),
+    ] {
+        let (code, out) = truefit_in(&dir, &args);
+        assert_eq!(code, Some(2), "{args:?}: {out:#}");
+        let fault = out["error"][0]["fault"].as_str().unwrap();
+        assert!(fault.contains(says), "{args:?}: {out:#}");
+        assert!(out["error"][0]["fix"].is_string());
+    }
+}
