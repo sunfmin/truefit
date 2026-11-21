@@ -1,0 +1,10 @@
+{
+  "tree": "7cd085fbb0e2bd56219e7c188ea710e95f13e2b0+d1fba762150c532c",
+  "lines": 99,
+  "serves": "truefit#12",
+  "considered": "reusing a case's env map for the fault (no: the real side must not be told), a separate .truefit record for no_faults (kept in truefit.toml beside faults instead), model::sha256 reused for the stand-in hash, the stand-in's ready check reused for a case's",
+  "reviewer": "codex:01a1fd59-d9c5-7d31-91c3-2409c4538422:default",
+  "author": "claude-code:002b2cff-ac7c-5e6d-97cd-03e904e2e8c9:opus",
+  "cut": "src/contract.rs: pass the optional fault variable to answer and zip it with the case’s fault there, deleting Standin::told and the redundant serde defaults on the new Option fields. Reuse the stand-in readiness check for case readiness, preserving the case-specific message and continuing with the remaining cases.",
+  "answer": "made each: Standin::told deleted, answer takes Option<&str> fault_env and zips it with c.fault; #[serde(default)] dropped on fault and no_faults; one fn ready(root, argv) serves the stand-in's and each case's ready, the case keeping its own why/needs and the loop going on"
+}
