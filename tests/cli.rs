@@ -436,10 +436,9 @@ fn a_fault_case_the_real_program_cannot_produce_here_is_not_run_with_what_it_nee
         "unreachable",
         r#"[[standin]]
 name = "t"
-run = ["/bin/sh", "-c", "[ \"$F\" = gone ] && exit 7; echo \"$@\"", "sh"]
+run = ["/bin/sh", "-c", "[ \"$TRUEFIT_FAULT\" = gone ] && exit 7; echo \"$@\"", "sh"]
 real = ["echo"]
 faults = ["gone"]
-fault_env = "F"
 [[standin.case]]
 name = "ok"
 args = ["hi"]
