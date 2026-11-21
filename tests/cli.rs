@@ -1513,3 +1513,50 @@ name = "c"
     assert_eq!(statuses(&out), [("saved", "checked")], "{out:#}");
     assert_eq!(code, Some(0), "{out:#}");
 }
+
+/// truefit#15: TLC unpacks each standard module it reads into java.io.tmpdir
+/// (`Naturals.tla` there) and deletes it on exit, so two runs sharing one read
+/// each other's half-written or deleted modules ("Module-Table lookup
+/// failure"). Each run has its own: two `truefit model`s at once both pass,
+/// and the host's shared temp dir (here a private stand-in for it, set as
+/// JVM-wide default through JAVA_TOOL_OPTIONS) is never written or emptied.
+/// The race itself is rare (3 of 50 runs here without the fix), so the
+/// untouched module is what fails at once if a run shares the temp dir again.
+#[test]
+fn two_model_runs_at_once_both_pass_each_in_its_own_temp_dir() {
+    let dir = model_sample("at-once", &[]);
+    let shared = dir.join("shared-tmp");
+    std::fs::create_dir_all(&shared).unwrap();
+    let planted = shared.join("Naturals.tla");
+    std::fs::write(&planted, "another run's module, half written").unwrap();
+    for round in 0..3 {
+        let pair: Vec<_> = (0..2)
+            .map(|_| {
+                Command::new(env!("CARGO_BIN_EXE_truefit"))
+                    .arg("model")
+                    .current_dir(&dir)
+                    .env(
+                        "JAVA_TOOL_OPTIONS",
+                        format!("-Djava.io.tmpdir={}", shared.display()),
+                    )
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        for child in pair {
+            let out = child.wait_with_output().unwrap();
+            let json: Value = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
+            assert_eq!(out.status.code(), Some(0), "round {round}: {json:#}");
+            assert_eq!(
+                json["models"][0]["result"], "passes",
+                "round {round}: {json:#}"
+            );
+        }
+    }
+    assert_eq!(
+        std::fs::read_to_string(&planted).ok().as_deref(),
+        Some("another run's module, half written"),
+        "a TLC run wrote or deleted a module in the shared temp dir"
+    );
+}

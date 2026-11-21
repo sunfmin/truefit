@@ -241,9 +241,14 @@ fn run_tlc(
         )]
     };
     let file = std::fs::File::create(&log).map_err(cannot)?;
+    // TLC unpacks its standard modules into java.io.tmpdir: a shared one lets
+    // two runs at once read each other's half-unpacked modules (truefit#15).
+    let tmp = work.join("tmp");
+    std::fs::create_dir_all(&tmp).map_err(cannot)?;
     let start = Instant::now();
     let mut child = Command::new("java")
         .arg("-XX:+UseParallelGC")
+        .arg(format!("-Djava.io.tmpdir={}", tmp.display()))
         .arg(format!(
             "-DTLA-Library={}",
             lib.parent().unwrap_or(root).display()

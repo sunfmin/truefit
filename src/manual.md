@@ -239,7 +239,9 @@ downloads it once from the official release into
 `~/.local/share/truefit/tlc/<version>/`; set `TRUEFIT_TLC_FROM` to a URL (or
 `file://` path) of a copy of that release where GitHub is out of reach: one
 whose checksum differs is refused. TLC runs on `java` (11 or later) on PATH.
-It runs in a temporary directory; nothing is written in the repo.
+It runs in a temporary directory of its own (TLC's java temp dir too, so
+runs at once on one host do not share unpacked modules); nothing is written
+in the repo.
 
 ### `[[model]]` in `truefit.toml`
 
