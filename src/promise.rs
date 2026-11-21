@@ -24,31 +24,21 @@ const CONCURRENT: &str = "at once, concurrent, concurrently, in parallel, simult
 /// `[promises]`: the files whose sentences are candidates, and how many
 /// days of history the fixes are read from.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, default)]
 pub struct Sources {
-    #[serde(default = "default_sources")]
     sources: Vec<String>,
-    #[serde(default = "default_history_days")]
     pub history_days: u64,
 }
 
 impl Default for Sources {
     fn default() -> Self {
         Sources {
-            sources: default_sources(),
-            history_days: default_history_days(),
+            sources: ["SPEC.md", "README.md", "docs/adr/*.md"]
+                .map(String::from)
+                .into(),
+            history_days: 180,
         }
     }
-}
-
-fn default_history_days() -> u64 {
-    180
-}
-
-fn default_sources() -> Vec<String> {
-    ["SPEC.md", "README.md", "docs/adr/*.md"]
-        .map(String::from)
-        .into()
 }
 
 /// `[[promise]]`: one promise, the sentence that makes it, and its checks.

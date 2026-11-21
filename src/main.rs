@@ -35,7 +35,7 @@ fn main() -> ExitCode {
             r => (r, None),
         };
         let marks = match rest {
-            [] if why.is_none() => Ok(&[][..]),
+            [] => Ok(&[][..]),
             ["--mark", pairs @ ..] if !pairs.is_empty() && pairs.len() % 2 == 0 => Ok(pairs),
             _ => Err(vec![contract::fault(
                 format!(

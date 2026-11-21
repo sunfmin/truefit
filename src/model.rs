@@ -596,11 +596,9 @@ fn constants(config: &str) -> String {
 }
 
 /// The files model `name`'s actions cover.
-pub fn files<'a>(models: &'a [Model], name: &str) -> Vec<&'a str> {
-    let model = models.iter().filter(|m| m.name == name);
-    model
-        .flat_map(|m| m.covers.iter().map(|c| c.file.as_str()))
-        .collect()
+pub fn files<'a>(models: &'a [Model], name: &'a str) -> impl Iterator<Item = &'a str> {
+    let model = models.iter().filter(move |m| m.name == name);
+    model.flat_map(|m| m.covers.iter().map(|c| c.file.as_str()))
 }
 
 /// The `stale-model` tasks: a model whose covered files changed since the

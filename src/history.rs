@@ -5,7 +5,7 @@
 use crate::contract::{self, CONFIG, Config};
 use crate::promise::{MARKS, has_any, hash, same_name};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 /// The words of a fix commit's subject, or of the issue's title it names.
@@ -62,11 +62,11 @@ fn titles(root: &Path) -> BTreeMap<String, String> {
 /// Whether `file` is the system's code: not under a dot or test directory,
 /// nor Markdown, JSON, a lockfile or text.
 fn code(file: &str) -> bool {
-    let parts: Vec<&str> = file.split('/').collect();
     let ext = file.rsplit_once('.').map_or("", |(_, e)| e);
-    !parts[..parts.len() - 1]
-        .iter()
-        .any(|p| p.starts_with('.') || ["tests", "test", "testdata", "__tests__"].contains(p))
+    !file
+        .rsplit('/')
+        .skip(1)
+        .any(|p| p.starts_with('.') || ["tests", "test", "testdata", "__tests__"].contains(&p))
         && !["md", "json", "lock", "txt"].contains(&ext)
 }
 
@@ -75,11 +75,7 @@ fn covered(root: &Path, config: &Config) -> Vec<String> {
     let mut files = Vec::new();
     for (rung, arg) in config.promise.iter().flat_map(|p| p.checks()) {
         match (rung, &config.sim) {
-            ("model", _) => files.extend(
-                crate::model::files(&config.model, arg)
-                    .iter()
-                    .map(|f| f.to_string()),
-            ),
+            ("model", _) => files.extend(crate::model::files(&config.model, arg).map(String::from)),
             ("sim", Some(sim)) => {
                 files.extend(sim.run.iter().filter(|f| root.join(f).is_file()).cloned());
                 files.extend(sim.code.iter().flat_map(|g| crate::next::expand(root, g)));
@@ -88,9 +84,6 @@ fn covered(root: &Path, config: &Config) -> Vec<String> {
         }
     }
     files
-        .iter()
-        .map(|f| f.trim_start_matches("./").to_string())
-        .collect()
 }
 
 /// The `fixed-often` tasks, or None outside a git repo.
@@ -133,11 +126,10 @@ fn fixed_often(root: &Path, config: &Config) -> Option<Vec<Value>> {
     }
     let mut tasks: Vec<(usize, Value)> = Vec::new();
     for (file, (newest, commits)) in files {
-        let mut fixes: Vec<&str> = commits.iter().filter_map(|c| c["fix"].as_str()).collect();
-        fixes.sort();
-        fixes.dedup();
+        let fixes: BTreeSet<&str> = commits.iter().filter_map(|c| c["fix"].as_str()).collect();
         let n = fixes.len();
-        if n < 2 || !code(&file) || !root.join(&file).is_file() || covered.contains(&file) {
+        let is_covered = covered.iter().any(|c| c.trim_start_matches("./") == file);
+        if n < 2 || !code(&file) || !root.join(&file).is_file() || is_covered {
             continue;
         }
         let hash = hash(&format!("fixed-often {file} {newest}"));
