@@ -337,8 +337,10 @@ pub fn differ_file(name: &str) -> String {
     format!(".truefit/{name}.differ.json")
 }
 
-fn write(root: &Path, file: &str, value: &Value) -> std::io::Result<()> {
-    std::fs::create_dir_all(root.join(".truefit"))?;
+/// Writes `value` to `root/file`, making the directories it is in.
+pub fn write(root: &Path, file: &str, value: &Value) -> std::io::Result<()> {
+    let path = root.join(file);
+    std::fs::create_dir_all(path.parent().unwrap_or(root))?;
     std::fs::write(root.join(file), format!("{value:#}\n"))
 }
 

@@ -220,10 +220,7 @@ fn report(seed: &str, record: &Value, changed: Value) -> Value {
     } else {
         "fails"
     };
-    let steps = record["lines"]
-        .as_array()
-        .map_or(0, |l| l.len().saturating_sub(1));
-    let mut r = json!({"seed": seed, "result": result, "verdict": record["last"], "steps": steps,
+    let mut r = json!({"seed": seed, "result": result, "verdict": record["last"], "steps": steps(record),
                        "kept": file(seed), "rerun": rerun_command(seed)});
     if !differs.is_null() {
         r["differs"] = differs.clone();
@@ -337,13 +334,20 @@ pub fn tasks(root: &Path) -> Vec<Value> {
                 "kind": "failing-seed",
                 "summary": format!("seed {seed} breaks invariant {} at step {}", v["invariant"].as_str().unwrap_or("?"), v["step"]),
                 "files": [file(seed)],
-                "evidence": {"seed": seed, "found": k["found"], "verdict": v, "steps": k["lines"].as_array().map_or(0, |l| l.len().saturating_sub(1))},
+                "evidence": {"seed": seed, "found": k["found"], "verdict": v, "steps": steps(k)},
                 "steps": format!("Run `{}` and read its steps (in {}) to where the invariant breaks: the system's bug is there. Fix the system's code, not the invariant or the simulation, so the seed passes. It stays kept, rerun first on every `truefit sim` as a regression. Commit the fix with .truefit/seeds/.", rerun_command(seed), file(seed)),
                 "accept": rerun_command(seed),
             }));
         }
     }
     tasks
+}
+
+/// The steps a kept record holds: its lines but the verdict.
+fn steps(record: &Value) -> usize {
+    record["lines"]
+        .as_array()
+        .map_or(0, |l| l.len().saturating_sub(1))
 }
 
 fn rerun_command(seed: &str) -> String {
@@ -360,36 +364,23 @@ fn kept(root: &Path, seed: &str) -> Option<Value> {
 
 /// Every kept seed, by name; a file in .truefit/seeds/ that is no record is none.
 fn all_kept(root: &Path) -> Vec<(String, Value)> {
-    let mut names: Vec<String> = std::fs::read_dir(root.join(SEEDS))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| {
-            e.path()
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
+    let mut names = crate::next::entries(&root.join(SEEDS));
     names.sort();
-    names.dedup();
     names
-        .into_iter()
-        .filter_map(|s| Some((s.clone(), kept(root, &s)?)))
+        .iter()
+        .filter_map(|n| n.strip_suffix(".json"))
+        .filter_map(|s| Some((s.to_string(), kept(root, s)?)))
         .collect()
 }
 
 fn write(root: &Path, seed: &str, record: &Value) -> Result<(), Vec<Value>> {
     let file = file(seed);
-    std::fs::create_dir_all(root.join(SEEDS))
-        .and_then(|()| std::fs::write(root.join(&file), format!("{record:#}\n")))
-        .map_err(|e| {
-            vec![fault(
-                format!("cannot write {file}: {e}"),
-                format!("make {SEEDS}/ a directory truefit can write"),
-            )]
-        })
+    contract::write(root, &file, record).map_err(|e| {
+        vec![fault(
+            format!("cannot write {file}: {e}"),
+            format!("make {SEEDS}/ a directory truefit can write"),
+        )]
+    })
 }
 
 fn entropy() -> u64 {

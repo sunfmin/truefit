@@ -184,7 +184,7 @@ fn join(at: &str, name: &str) -> String {
     }
 }
 
-fn entries(dir: &Path) -> Vec<String> {
+pub fn entries(dir: &Path) -> Vec<String> {
     std::fs::read_dir(dir)
         .into_iter()
         .flatten()
