@@ -1,0 +1,6 @@
+{
+  "tree": "ee8bc443cedff801b58d3f65b13126629ea53a6b+d1fba762150c532c",
+  "picker": "codex:01a1fd9a-cbda-7082-a486-92e2b3347ae0:default",
+  "author": "claude-code:fdbaf18b-baf2-563f-a418-83245e6218a7:opus",
+  "none": "The sole candidate skips TLC entirely, so it cannot exercise the temporary-directory isolation this change adds."
+}
