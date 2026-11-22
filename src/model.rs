@@ -1016,16 +1016,16 @@ mod tests {
             toml::from_str("name = \"m\"\nspec = \"m/M.tla\"\nconfig = \"m/M.cfg\"\n").unwrap();
         let root = Path::new("/nonexistent-truefit-root");
         let work = root.join("work");
-        let Err(faults) = run_tlc(
+        let faults = run_tlc(
             Path::new("tla2tools.jar"),
             root,
             &m,
             work,
             Path::new("M.cfg"),
             Path::new("M.tla"),
-        ) else {
-            panic!("a run without its work dir started");
-        };
+        )
+        .err()
+        .expect("a run without its work dir is a fault");
         assert_eq!(faults.len(), 1);
         assert!(
             faults[0]["fault"]
