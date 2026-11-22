@@ -1,21 +1,58 @@
 {
   "suites": {
     "rust": {
-      "prod_lines": 2366,
-      "test_lines": 1703,
-      "tests": 52,
+      "prod_lines": 2823,
+      "test_lines": 1984,
+      "tests": 53,
       "failures": 0,
       "test_seconds": 0.012,
-      "covered_lines": 1819,
+      "covered_lines": 2197,
       "uncovered_lines": 0
     }
   },
   "loosened": [],
-  "kept": [],
+  "kept": [
+    {
+      "suite": "rust",
+      "test": "truefit::cli::model_states_are_tlcs_distinct_states_under_symmetry",
+      "hash": "129c918f0d45cd80",
+      "reason": "Its own sample (testdata/symmetry, 2002 states under SYMMETRY); none of its assertions is in the at-once test, and the two samples cannot share one run."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::sim_catches_a_nondeterministic_simulation_at_the_first_step_that_differs",
+      "hash": "bacaddf74c2424da",
+      "reason": "Swaps in ./sim-nondeterministic; folding it into the deterministic sim test changes the kept seeds and next counts that test checks."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::sim_finds_the_sample_bug_keeps_its_seed_and_reruns_it_step_for_step",
+      "hash": "4ca7a398f72f40b5",
+      "reason": "Its seed/rerun/forget assertions are not in the promise test, which renames the promise and marks it; folding those in changes the toml and the next counts this test checks."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::next_gives_each_kind_of_task_once_on_the_sample_with_its_evidence",
+      "hash": "148be1be9085bf16",
+      "reason": "The plutil sample with its four task kinds; the fresh-ties test is its own echo config whose whole point is no task, so the setups conflict."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::a_fault_case_the_real_program_cannot_produce_here_is_not_run_with_what_it_needs",
+      "hash": "16c674a58a78bc8b",
+      "reason": "Its own truefit.toml (an unreachable fault case); the unwritable-record test makes .truefit a file, which would break this one's record checks."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::a_case_dir_is_copied_whole_and_one_missing_cannot_run",
+      "hash": "34646b590547daea",
+      "reason": "Its own truefit.toml (case dirs, a non-executable stand-in); merging configs shifts stand-in indices and the cannot-run test's next message."
+    }
+  ],
   "measured": {
     "rust": {
-      "uncovered_lines": 31,
-      "test_seconds": 15.826
+      "uncovered_lines": 49,
+      "test_seconds": 35.166
     }
   }
 }

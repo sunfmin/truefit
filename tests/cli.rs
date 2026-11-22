@@ -78,18 +78,18 @@ fn an_unknown_command_exits_2_and_names_the_manual() {
     );
 }
 
+/// On one copy of the plutil sample: its stand-ins run every case; the true
+/// one agrees with plutil and its real run is recorded; the wrong one differs
+/// and both answers are printed.
 #[test]
-fn the_sample_stand_ins_run_every_case() {
-    let (code, out) = truefit_in(&sample("plutil", "plain"), &["contract"]);
-    assert_eq!(code, Some(0), "{out:#}");
+fn the_sample_stand_ins_run_every_case_the_true_one_agrees_and_the_wrong_one_differs() {
+    let dir = sample("plutil", "real");
+    let (code, out) = truefit_in(&dir, &["contract"]);
+    assert_eq!(code, Some(0), "every case runs: {out:#}");
     assert_eq!(out["standins"][0]["cases"].as_array().unwrap().len(), 5);
     assert_eq!(out["standins"][1]["result"], "pass");
     assert!(out["next"].as_str().unwrap().contains("--real"));
-}
 
-#[test]
-fn a_true_stand_in_agrees_with_plutil_and_its_real_run_is_recorded() {
-    let dir = sample("plutil", "real");
     let (code, out) = truefit_in(&dir, &["contract", "--real", "plutil"]);
     assert_eq!(code, Some(0), "{out:#}");
     let s = &out["standins"][0];
@@ -110,16 +110,21 @@ fn a_true_stand_in_agrees_with_plutil_and_its_real_run_is_recorded() {
         .unwrap()
         .stdout;
     assert_eq!(record["date"], String::from_utf8(utc).unwrap().trim());
-    assert!(record["version"].is_string());
+    let version = Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .unwrap()
+        .stdout;
+    assert_eq!(
+        record["version"],
+        String::from_utf8(version).unwrap().trim(),
+        "the recorded version is its `version` command's first line"
+    );
     let (_, plain) = truefit_in(&dir, &["contract"]);
     assert_eq!(plain["standins"][0]["real_run"], record);
-}
 
-#[test]
-fn a_wrong_stand_in_differs_and_both_answers_are_printed() {
-    let dir = sample("plutil", "wrong");
     let (code, out) = truefit_in(&dir, &["contract", "--real", "plutil-wrong"]);
-    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(code, Some(1), "the wrong stand-in differs: {out:#}");
     let lint = &out["standins"][0]["cases"][0];
     assert_eq!(lint["result"], "differ");
     assert_eq!(
@@ -318,19 +323,11 @@ fn a_real_run_whose_record_cannot_be_written_fails() {
         let fault = out["standins"][i]["fault"].as_str().unwrap();
         assert!(fault.contains(file), "{out:#}");
     }
-}
-
-#[test]
-fn by_default_a_contract_compares_exit_and_stdout() {
-    let dir = config(
-        "default-compare",
-        "[[standin]]\nname = \"e\"\nrun = [\"/bin/echo\", \"a\"]\nreal = [\"echo\"]\n[[standin.case]]\nname = \"c\"\nargs = [\"b\"]\n",
-    );
-    let (code, out) = truefit_in(&dir, &["contract", "--real"]);
-    assert_eq!(code, Some(1), "{out:#}");
+    // `d` declares no `compare`: by default a contract compares exit and stdout.
     assert_eq!(
-        out["standins"][0]["cases"][0]["differ"],
-        serde_json::json!(["stdout"])
+        out["standins"][1]["cases"][0]["differ"],
+        serde_json::json!(["stdout"]),
+        "by default a contract compares exit and stdout: {out:#}"
     );
 }
 
@@ -971,8 +968,18 @@ fn model_states_are_tlcs_distinct_states_under_symmetry() {
     );
 }
 
+/// truefit#15: TLC unpacks each standard module it reads into java.io.tmpdir
+/// (`Naturals.tla` there) and deletes it on exit, so two runs sharing one read
+/// each other's half-written or deleted modules ("Module-Table lookup
+/// failure"). Each run has its own: the sample's passing check runs twice at
+/// once, both pass, and the host's shared temp dir (here a private stand-in
+/// for it, set as JVM-wide default through JAVA_TOOL_OPTIONS) is never
+/// written or emptied. The race itself is rare (3 of 50 runs here without the
+/// fix), so the untouched module is what fails at once if a run shares the
+/// temp dir again.
 #[test]
-fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
+fn model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_dir_and_names_a_broken_property()
+ {
     let dir = model_sample("model", &[]);
     // Without its `limit`, a model has 300 seconds.
     let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
@@ -981,21 +988,52 @@ fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
         .filter(|l| !l.starts_with("limit = "))
         .collect();
     std::fs::write(dir.join("truefit.toml"), toml.join("\n")).unwrap();
-    let (code, out) = truefit_in(&dir, &["model"]);
-    assert_eq!(code, Some(0), "{out:#}");
-    let queue = &out["models"][0];
+    let shared = dir.join("shared-tmp");
+    std::fs::create_dir_all(&shared).unwrap();
+    let planted = shared.join("Naturals.tla");
+    std::fs::write(&planted, "another run's module, half written").unwrap();
+    let pair: Vec<_> = (0..2)
+        .map(|_| {
+            Command::new(env!("CARGO_BIN_EXE_truefit"))
+                .arg("model")
+                .current_dir(&dir)
+                .env(
+                    "JAVA_TOOL_OPTIONS",
+                    format!("-Djava.io.tmpdir={}", shared.display()),
+                )
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+    for child in pair {
+        let run = child.wait_with_output().unwrap();
+        let out: Value = serde_json::from_slice(&run.stdout).unwrap_or(Value::Null);
+        assert_eq!(
+            run.status.code(),
+            Some(0),
+            "both runs at once pass: {out:#}"
+        );
+        let queue = &out["models"][0];
+        assert_eq!(
+            (&queue["name"], &queue["result"]),
+            (&"queue".into(), &"passes".into()),
+            "both runs at once pass: {out:#}"
+        );
+        assert_eq!((&queue["states"], &queue["depth"]), (&7.into(), &4.into()));
+        assert_eq!(queue["limit"], 300);
+        assert_eq!(out["tlc"]["version"], "1.7.4");
+        assert!(
+            out["tlc"]["jar"]
+                .as_str()
+                .unwrap()
+                .ends_with(".local/share/truefit/tlc/1.7.4/tla2tools.jar")
+        );
+    }
     assert_eq!(
-        (&queue["name"], &queue["result"]),
-        (&"queue".into(), &"passes".into())
-    );
-    assert_eq!((&queue["states"], &queue["depth"]), (&7.into(), &4.into()));
-    assert_eq!(queue["limit"], 300);
-    assert_eq!(out["tlc"]["version"], "1.7.4");
-    assert!(
-        out["tlc"]["jar"]
-            .as_str()
-            .unwrap()
-            .ends_with(".local/share/truefit/tlc/1.7.4/tla2tools.jar")
+        std::fs::read_to_string(&planted).ok().as_deref(),
+        Some("another run's module, half written"),
+        "a TLC run wrote or deleted a module in the shared temp dir"
     );
     // The design's bug, put in the model: a redelivered message is applied again.
     let spec = std::fs::read_to_string(dir.join("Queue.tla")).unwrap();
@@ -1795,51 +1833,4 @@ name = "c"
     let (code, out) = truefit_in(&dir, &["promise"]);
     assert_eq!(statuses(&out), [("saved", "checked")], "{out:#}");
     assert_eq!(code, Some(0), "{out:#}");
-}
-
-/// truefit#15: TLC unpacks each standard module it reads into java.io.tmpdir
-/// (`Naturals.tla` there) and deletes it on exit, so two runs sharing one read
-/// each other's half-written or deleted modules ("Module-Table lookup
-/// failure"). Each run has its own: two `truefit model`s at once both pass,
-/// and the host's shared temp dir (here a private stand-in for it, set as
-/// JVM-wide default through JAVA_TOOL_OPTIONS) is never written or emptied.
-/// The race itself is rare (3 of 50 runs here without the fix), so the
-/// untouched module is what fails at once if a run shares the temp dir again.
-#[test]
-fn two_model_runs_at_once_both_pass_each_in_its_own_temp_dir() {
-    let dir = model_sample("at-once", &[]);
-    let shared = dir.join("shared-tmp");
-    std::fs::create_dir_all(&shared).unwrap();
-    let planted = shared.join("Naturals.tla");
-    std::fs::write(&planted, "another run's module, half written").unwrap();
-    for round in 0..3 {
-        let pair: Vec<_> = (0..2)
-            .map(|_| {
-                Command::new(env!("CARGO_BIN_EXE_truefit"))
-                    .arg("model")
-                    .current_dir(&dir)
-                    .env(
-                        "JAVA_TOOL_OPTIONS",
-                        format!("-Djava.io.tmpdir={}", shared.display()),
-                    )
-                    .stdout(std::process::Stdio::piped())
-                    .spawn()
-                    .unwrap()
-            })
-            .collect();
-        for child in pair {
-            let out = child.wait_with_output().unwrap();
-            let json: Value = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
-            assert_eq!(out.status.code(), Some(0), "round {round}: {json:#}");
-            assert_eq!(
-                json["models"][0]["result"], "passes",
-                "round {round}: {json:#}"
-            );
-        }
-    }
-    assert_eq!(
-        std::fs::read_to_string(&planted).ok().as_deref(),
-        Some("another run's module, half written"),
-        "a TLC run wrote or deleted a module in the shared temp dir"
-    );
 }
