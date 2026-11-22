@@ -850,7 +850,6 @@ fn checked(config: &str, sections: &[&str]) -> Vec<String> {
     names
 }
 
-/// A git command's output in `root`, or None where it fails.
 /// The CONSTANT sections of a TLC config, which a trace's check keeps.
 fn constants(config: &str) -> String {
     let mut keep = false;
@@ -1009,6 +1008,36 @@ mod tests {
         let out = "Progress(5) at 2026-11-20 10:00:00: 742 states generated (742 s/min), 742 distinct states found, 12 states left on queue.\nProgress(9) at 2026-11-20 10:01:00: 1,913 states generated (1,171 s/min), 913 distinct states found (171 ds/min), 40 states left on queue.\nModel checking completed. No error has been found.\n31,002 states generated, 29,705 distinct states found, 0 states left on queue.\nThe depth of the complete state graph search is 14.\n";
         let r = read(out);
         assert_eq!((r.states, r.depth), (Some(29705), Some(14)));
+    }
+
+    #[test]
+    fn a_tlc_run_that_cannot_start_is_a_fault_naming_java_and_its_fix() {
+        let m: Model =
+            toml::from_str("name = \"m\"\nspec = \"m/M.tla\"\nconfig = \"m/M.cfg\"\n").unwrap();
+        let root = Path::new("/nonexistent-truefit-root");
+        let work = root.join("work");
+        let faults = run_tlc(
+            Path::new("tla2tools.jar"),
+            root,
+            &m,
+            work,
+            Path::new("M.cfg"),
+            Path::new("M.tla"),
+        )
+        .err()
+        .expect("a run without its work dir is a fault");
+        assert_eq!(faults.len(), 1);
+        assert!(
+            faults[0]["fault"]
+                .as_str()
+                .unwrap()
+                .starts_with("cannot run TLC (java): "),
+            "{faults:?}"
+        );
+        assert_eq!(
+            faults[0]["fix"],
+            "put a Java 11 or later `java` on PATH: TLC runs on it"
+        );
     }
 
     #[test]

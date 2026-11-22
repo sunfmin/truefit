@@ -1,0 +1,102 @@
+{
+  "0de7611dc99a": {
+    "mark": "not",
+    "sentence": "Until truefit#16 a cut (`packaging/release.sh cut`) built on the cutting host, for aarch64 only, and published from there: the archive to the tap's release, the formula (with `depends_on arch: :arm64`) to the tap.",
+    "source": "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:7",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "1364723e2d49": {
+    "mark": "not",
+    "sentence": "A system's SPEC and ADRs make promises (\"exactly once\", \"never\", \"at most one\", \"within N seconds\"); nothing tied a promise to the check that keeps it, so one could sit with no check, or with a check that never exercises it, and nobody saw.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:7",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "14d3d7be4c43": {
+    "mark": "not",
+    "sentence": "The binary was only ad hoc signed: Intel Macs could not run it, and Gatekeeper rejected a copy downloaded in a browser.",
+    "source": "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:9",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "24576ced674e": {
+    "mark": "not",
+    "sentence": "Precedent: Antithesis catalogs every assertion and counts one never reached as failing; FoundationDB passes a test ensemble only when every code probe was hit; Kiro links each requirement to a property and its test, and concedes some map to none.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:9",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "2c1fb0cf5af6": {
+    "mark": "not",
+    "sentence": "A system's tests run against stand-ins of the programs it drives, a simulation runs it under seeded faults, and a model checks its design; each is only as good as its tie to the real thing.",
+    "source": "README.md:5",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "3500f4c1c8fc": {
+    "mark": "promise",
+    "sentence": "Invariant: **the signing identity and the notary key live only in sunfmin/homebrew-tap, and only its `release` workflow signs.**",
+    "source": "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:23"
+  },
+  "4544e4b26a9a": {
+    "kind": "fixed-often",
+    "mark": "not",
+    "summary": "src/contract.rs was changed by 2 fixes in 180 days, and no registered promise's check covers it",
+    "why": "Neither commit fixes a broken behaviour in src/contract.rs: bbcadcb5 (truefit#10) adds a git() helper for history reading, cffef13d adds the [promises]/[[promise]] config fields and wires promise faults into load. Both are feature additions that touch the config loader; they keep no promise of their own."
+  },
+  "5a5831fbc313": {
+    "mark": "not",
+    "sentence": "guild#25: every guild test passed while a soft stop let Claude Code run its next tool call.",
+    "source": "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md:7",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "6b61b16fbe81": {
+    "mark": "promise",
+    "sentence": "A cut needs only `gh` logged in as a user who may push truefit and dispatch the tap's workflow; no tap token on the host.",
+    "source": "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:48"
+  },
+  "7b2443ff3277": {
+    "mark": "promise",
+    "sentence": "truefit drives a system only through commands the system declares in `truefit.toml`; it links no code of the systems it checks.",
+    "source": "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md:17"
+  },
+  "7e9f8c6719b0": {
+    "mark": "not",
+    "sentence": "Only a live run found it.",
+    "source": "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md:7",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "806c2bbe0e67": {
+    "mark": "promise",
+    "sentence": "A tie truefit cannot run (the real program needs an account, a login, a device) is reported as not run, with what it needs; never counted as passing.",
+    "source": "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md:23"
+  },
+  "89cd189ae52b": {
+    "mark": "promise",
+    "sentence": "A `sim` check is reached only when a step of the last `truefit sim` named the invariant in its `checked`, in a state it is about (the simulation says which; truefit cannot judge a state); a `model` check only when the model's config checks an invariant of that name.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:14"
+  },
+  "b67092a939ad": {
+    "mark": "promise",
+    "sentence": "truefit never decides from prose alone that a sentence is a promise.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:16"
+  },
+  "bcb4a41244ae": {
+    "mark": "not",
+    "sentence": "truefit follows slimfit ADR 0013 as it stands; this records only what is truefit's.",
+    "source": "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:22",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  },
+  "ccface83274e": {
+    "mark": "promise",
+    "sentence": "**Registered but never exercised fails.**",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:14"
+  },
+  "e16ece24dfdf": {
+    "mark": "promise",
+    "sentence": "The manual is `truefit --help`, and it is the only copy.",
+    "source": "README.md:11"
+  },
+  "ffcdeaf1d46d": {
+    "mark": "not",
+    "sentence": "First users, each tie's acceptance proven on one: contracts on factorium and sesame; simulation on factum, then factorium, then guild (guild#29); models on factum's exactly-once and factorium's heavy queue, then guild (guild#28).",
+    "source": "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md:18",
+    "why": "a description, history, plan or other systems' behaviour, not a promise truefit makes about its own runs"
+  }
+}
