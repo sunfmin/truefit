@@ -1,0 +1,7 @@
+# The toolchain the gate builds with, so the tap's release build (which
+# rustup also reads this from) compiles what the gate passed (truefit#17).
+[toolchain]
+channel = "nightly-2026-10-22"
+components = ["rustfmt", "clippy"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+profile = "minimal"
