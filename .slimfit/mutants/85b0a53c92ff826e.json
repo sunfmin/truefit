@@ -1,0 +1,6 @@
+{
+  "tree": "12d754473659c858b880b541798a273e5a10adb5+d1fba762150c532c",
+  "picker": "codex:01a204a4-cd34-7cd2-90bd-e24c0b272627:default",
+  "author": "claude-code:1a6a48f9-7713-5836-bc59-e8ecfc32a6e3:opus",
+  "none": "The broken-model and committed-trace assertions catch both default returns, and the expected `broken` result for a parse error catches the inverted behaviour guard."
+}
