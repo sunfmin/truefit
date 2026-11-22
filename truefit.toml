@@ -5,3 +5,54 @@
 
 [contract]
 standins = ["tests/fake-*"]
+
+# truefit's own promises (truefit#24). Each is kept by a test in tests/ or
+# packaging/release-test.sh; truefit cannot see a test reach one.
+
+[[promise]]
+name = "help-is-the-manual"
+says = "The manual is `truefit --help`, and it is the only copy."
+source = "README.md:11"
+check = ["test"] # tests/cli.rs help_is_the_manual: --help prints src/manual.md
+
+[[promise]]
+name = "drives-only-declared-commands"
+says = "truefit drives a system only through commands the system declares in `truefit.toml`; it links no code of the systems it checks."
+source = "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md:17"
+check = ["test"] # tests/cli.rs: contract, sim and model run only the samples' declared commands
+
+[[promise]]
+name = "not-run-never-passes"
+says = "A tie truefit cannot run (the real program needs an account, a login, a device) is reported as not run, with what it needs; never counted as passing."
+source = "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md:23"
+check = ["test"] # tests/cli.rs a_real_program_*_is_not_run, a_fault_case_..._is_not_run_with_what_it_needs
+
+[[promise]]
+name = "registered-unexercised-fails"
+says = "Registered but never exercised fails."
+source = "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:14"
+check = ["test"] # tests/cli.rs promises_are_checked_and_reached_unreached_unchecked_or_kept
+
+[[promise]]
+name = "reached-only-when-named"
+says = "A `sim` check is reached only when a step of the last `truefit sim` named the invariant in its `checked`, in a state it is about (the simulation says which; truefit cannot judge a state); a `model` check only when the model's config checks an invariant of that name."
+source = "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:14"
+check = ["test"] # tests/cli.rs promises_are_checked_and_reached_unreached_unchecked_or_kept
+
+[[promise]]
+name = "never-decides-from-prose"
+says = "truefit never decides from prose alone that a sentence is a promise."
+source = "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:16"
+check = ["test"] # tests/cli.rs a_candidate_marked_a_promise_fails_until_registered_...: candidates stay unmarked until marked
+
+[[promise]]
+name = "only-the-tap-signs"
+says = "the signing identity and the notary key live only in sunfmin/homebrew-tap, and only its `release` workflow signs."
+source = "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:23"
+kept = "where secrets live and which repo has a release workflow is the repos' setup, not something a run of truefit or its cut does; release.sh signs nothing and takes no secret, which a change to it shows in review"
+
+[[promise]]
+name = "cut-needs-only-gh"
+says = "A cut needs only `gh` logged in as a user who may push truefit and dispatch the tap's workflow; no tap token on the host."
+source = "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:48"
+check = ["test"] # packaging/release-test.sh runs the cut with gh faked and no token set
