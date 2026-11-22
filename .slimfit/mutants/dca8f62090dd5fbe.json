@@ -1,0 +1,6 @@
+{
+  "tree": "4f8a06f39c8b6b9cb1ecc7493ea3df15eb276c69+d1fba762150c532c",
+  "picker": "codex:01a2049b-b482-7e82-8583-e2b0a91bf624:default",
+  "author": "claude-code:c05b9870-8519-53aa-9fed-321440a30cd4:opus",
+  "none": "The diff only adds a test, and the listing contains no mutant candidates."
+}
