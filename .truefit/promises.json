@@ -34,6 +34,12 @@
     "sentence": "Invariant: **the signing identity and the notary key live only in sunfmin/homebrew-tap, and only its `release` workflow signs.**",
     "source": "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:23"
   },
+  "4544e4b26a9a": {
+    "kind": "fixed-often",
+    "mark": "not",
+    "summary": "src/contract.rs was changed by 2 fixes in 180 days, and no registered promise's check covers it",
+    "why": "Neither commit fixes a broken behaviour in src/contract.rs: bbcadcb5 (truefit#10) adds a git() helper for history reading, cffef13d adds the [promises]/[[promise]] config fields and wires promise faults into load. Both are feature additions that touch the config loader; they keep no promise of their own."
+  },
   "5a5831fbc313": {
     "mark": "not",
     "sentence": "guild#25: every guild test passed while a soft stop let Claude Code run its next tool call.",
