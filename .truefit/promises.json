@@ -1,0 +1,8 @@
+{
+  "4544e4b26a9a": {
+    "kind": "fixed-often",
+    "mark": "not",
+    "summary": "src/contract.rs was changed by 2 fixes in 180 days, and no registered promise's check covers it",
+    "why": "Neither commit fixes a broken behaviour in src/contract.rs: bbcadcb5 (truefit#10) adds a git() helper for history reading, cffef13d adds the [promises]/[[promise]] config fields and wires promise faults into load. Both are feature additions that touch the config loader; they keep no promise of their own."
+  }
+}
