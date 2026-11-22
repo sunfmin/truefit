@@ -396,7 +396,7 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
             other => wrong.push(format!(
                 "reject trace {file}: its invariants' check is {}{}",
                 other.unwrap_or(""),
-                inv.get("output").map_or(String::new(), |o| format!(": {o}"))
+                inv["output"].as_str().map_or(String::new(), |o| format!(": {o}"))
             )),
         }
         t["breaks"] = inv["breaks"].clone();
@@ -512,7 +512,8 @@ fn check(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>> {
         r["result"] = "timed out".into();
     } else if t.completed {
         r["result"] = "passes".into();
-    } else if let Some(error) = read.error {
+    } else if let Some(error) = read.error.filter(|_| !read.behaviour.is_empty()) {
+        // An error with no behaviour reaching it (a parse error) is no failing property.
         r["result"] = "fails".into();
         r["error"] = error.into();
         r["behaviour"] = read.behaviour.into();
