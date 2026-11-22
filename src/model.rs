@@ -1011,6 +1011,36 @@ mod tests {
     }
 
     #[test]
+    fn a_tlc_run_that_cannot_start_is_a_fault_naming_java_and_its_fix() {
+        let m: Model =
+            toml::from_str("name = \"m\"\nspec = \"m/M.tla\"\nconfig = \"m/M.cfg\"\n").unwrap();
+        let root = Path::new("/nonexistent-truefit-root");
+        let work = root.join("work");
+        let Err(faults) = run_tlc(
+            Path::new("tla2tools.jar"),
+            root,
+            &m,
+            work,
+            Path::new("M.cfg"),
+            Path::new("M.tla"),
+        ) else {
+            panic!("a run without its work dir started");
+        };
+        assert_eq!(faults.len(), 1);
+        assert!(
+            faults[0]["fault"]
+                .as_str()
+                .unwrap()
+                .starts_with("cannot run TLC (java): "),
+            "{faults:?}"
+        );
+        assert_eq!(
+            faults[0]["fix"],
+            "put a Java 11 or later `java` on PATH: TLC runs on it"
+        );
+    }
+
+    #[test]
     fn a_value_tlc_wraps_stays_its_variables_even_where_it_holds_an_equals_sign() {
         let out =
             "State 1: <Initial predicate>\n/\\ log = <<\"a = b\",\n   \"c = d\">>\n/\\ x = 1\n\n";
