@@ -1,0 +1,29 @@
+{
+  "tip": "a9cb63aff36e9927e57f094ffa85d4407dead88a",
+  "from": "88d6e7241ef2f2ed2d3e156774b9a3fbd05bbe0c",
+  "pool": 648,
+  "drawn": {
+    "rust": [
+      {
+        "name": "src/history.rs:48:5: replace titles -> BTreeMap<String, String> with BTreeMap::from_iter([(\"xyzzy\".into(), \"xyzzy\".into())])",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/contract.rs:473:34: replace != with == in differ",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/contract.rs:634:43: replace <= with > in civil",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/next.rs:150:5: replace differing -> Value with Default::default()",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:485:53: replace == with != in unbacked",
+        "outcome": "killed"
+      }
+    ]
+  }
+}
