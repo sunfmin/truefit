@@ -12,6 +12,16 @@
   },
   "loosened": [],
   "kept": [],
+  "kept_files": [
+    {
+      "suite": "rust",
+      "file": "src/model.rs",
+      "prod_lines": 896,
+      "commits_90d": 11,
+      "commits_total": 11,
+      "reason": "Deep already: ~10 public items (Model, faults, run, unbacked, unreached, files, tasks, TRACES, TLC_VERSION, sha256) front ~900 lines of pinned TLC install, run under a limit, parallel accept/reject trace checks, generated trace modules and TLC output reading; callers (main, contract, promise, next, history) each use one or two. Tests cross the CLI against real TLC; unit tests only hit pure internal seams (TLC output, TLA+ values, config sections). Splitting TLC output/trace generation into modules would spread one concept, not deepen it. Removed one stale doc line."
+    }
+  ],
   "measured": {
     "rust": {
       "uncovered_lines": 43,

@@ -849,7 +849,6 @@ fn checked(config: &str, sections: &[&str]) -> Vec<String> {
     names
 }
 
-/// A git command's output in `root`, or None where it fails.
 /// The CONSTANT sections of a TLC config, which a trace's check keeps.
 fn constants(config: &str) -> String {
     let mut keep = false;
