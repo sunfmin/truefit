@@ -1,12 +1,12 @@
 {
   "suites": {
     "rust": {
-      "prod_lines": 2823,
-      "test_lines": 1984,
-      "tests": 53,
+      "prod_lines": 2852,
+      "test_lines": 1996,
+      "tests": 58,
       "failures": 0,
       "test_seconds": 0.012,
-      "covered_lines": 2197,
+      "covered_lines": 2227,
       "uncovered_lines": 0
     }
   },
@@ -49,10 +49,20 @@
       "reason": "Its own truefit.toml (case dirs, a non-executable stand-in); merging configs shifts stand-in indices and the cannot-run test's next message."
     }
   ],
+  "kept_files": [
+    {
+      "suite": "rust",
+      "file": "src/model.rs",
+      "prod_lines": 896,
+      "commits_90d": 11,
+      "commits_total": 11,
+      "reason": "Deep already: ~10 public items (Model, faults, run, unbacked, unreached, files, tasks, TRACES, TLC_VERSION, sha256) front ~900 lines of pinned TLC install, run under a limit, parallel accept/reject trace checks, generated trace modules and TLC output reading; callers (main, contract, promise, next, history) each use one or two. Tests cross the CLI against real TLC; unit tests only hit pure internal seams (TLC output, TLA+ values, config sections). Splitting TLC output/trace generation into modules would spread one concept, not deepen it. Removed one stale doc line."
+    }
+  ],
   "measured": {
     "rust": {
-      "uncovered_lines": 49,
-      "test_seconds": 35.166
+      "uncovered_lines": 43,
+      "test_seconds": 48.896
     }
   }
 }
