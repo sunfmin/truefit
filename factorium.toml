@@ -6,13 +6,14 @@ fast_limit = 600
 slow = "./gate.sh"
 slow_limit = 600
 
-# A cut: packaging/release.sh builds the tag's version and publishes the
-# archive and Formula/truefit.rb to the tap sunfmin/homebrew-tap; factorium
-# tags HEAD and installs the formula.
+# A cut (ADR 0003): packaging/release.sh builds the tag's version, pushes the
+# tag and runs the tap sunfmin/homebrew-tap's release workflow, which signs,
+# notarizes and publishes it; factorium tags HEAD and installs the formula.
 [cut]
 steps = ["packaging/release.sh cut $FACTORIUM_VERSION"]
 formula = "sunfmin/tap/truefit"
-limit = 1800
+# The host's build, then the tap's run (release.sh waits at most 2400s).
+limit = 2700
 
 # slimfit's tasks and a sample of landed changes' mutants, then truefit's own
 # (`truefit next --all`, built from the base's tip: the truefit being checked

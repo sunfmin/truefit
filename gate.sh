@@ -8,13 +8,13 @@ cargo clippy --all-targets --quiet -- -D warnings
 # The tests, measured against .slimfit/baseline.json (in place of cargo test).
 slimfit check
 # The release script, as far as it goes without publishing.
-cargo build --release --quiet
 sh -n packaging/release.sh
 for good in v0.1.0 v1.22.333; do packaging/release.sh check-tag "$good"; done
 for bad in "" v1 v1.2 1.2.3 v1.2.3.4 v1..3 v1.2.x "v1.2.3;x"; do
     if packaging/release.sh check-tag "$bad" 2>/dev/null; then echo "gate: release.sh takes \"$bad\""; exit 1; fi
 done
 mkdir -p .slimfit/out
+sh packaging/release-test.sh
 DIST=.slimfit/out/dist packaging/release.sh dry
 # Without tags (factorium's promotion clone), a build still stamps the
 # development form: Cargo.toml's version + the commit count + the hash.

@@ -10,11 +10,22 @@ or stale.
 
 The manual is `truefit --help`, and it is the only copy.
 
+## Install
+
+```sh
+brew install sunfmin/tap/truefit
+```
+
+The formula's binary is universal (Apple silicon and Intel), Developer ID
+signed and notarized (ADR 0003).
+
 ## Develop
 
 - `./gate.sh`: fmt, clippy, the tests through `slimfit check`, and the release
   script as far as it goes without publishing (`packaging/release.sh dry`).
 - A release is cut by factorium (`[cut]` in `factorium.toml`):
-  `packaging/release.sh cut vX.Y.Z` publishes the formula `sunfmin/tap/truefit`.
+  `packaging/release.sh cut vX.Y.Z` builds it, pushes the tag and runs
+  sunfmin/homebrew-tap's release workflow, which signs, notarizes and publishes
+  the formula `sunfmin/tap/truefit` (ADR 0003).
 
 The decisions are in `docs/adr/`.
