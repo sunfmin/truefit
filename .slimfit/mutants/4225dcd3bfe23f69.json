@@ -1,0 +1,25 @@
+{
+  "tree": "a9cb63aff36e9927e57f094ffa85d4407dead88a+5294ef4e13978773",
+  "picker": "codex:01a2049d-518e-7ef3-84dd-5ffb9cca3f6f:default",
+  "author": "claude-code:8bd576ff-a4e7-584d-8488-8c1db8775169:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/contract.rs:455:5: replace version -> Option<String> with Some(\"xyzzy\".into())",
+        "why": "The merged recording test checks that the version is a string and survives rereading, which a fabricated version would satisfy.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      }
+    ]
+  },
+  "removed_tests": {
+    "rust": [
+      "tests/cli.rs:82: the_sample_stand_ins_run_every_case",
+      "tests/cli.rs:91: a_true_stand_in_agrees_with_plutil_and_its_real_run_is_recorded",
+      "tests/cli.rs:119: a_wrong_stand_in_differs_and_both_answers_are_printed",
+      "tests/cli.rs:324: by_default_a_contract_compares_exit_and_stdout",
+      "tests/cli.rs:975: model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property",
+      "tests/cli.rs:1809: two_model_runs_at_once_both_pass_each_in_its_own_temp_dir"
+    ]
+  }
+}
