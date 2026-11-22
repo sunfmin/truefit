@@ -1033,6 +1033,39 @@ fn model_checks_the_sample_with_the_pinned_tlc_and_names_a_broken_property() {
             .unwrap()
             .contains("never weaken the property")
     );
+    // A spec TLC cannot parse is broken, its output the fault to correct.
+    std::fs::write(
+        dir.join("Queue.tla"),
+        "---- MODULE Queue ----\nVARIABLE\n====\n",
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["model", "queue"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let queue = &out["models"][0];
+    assert_eq!(queue["result"], "broken", "{out:#}");
+    assert!(
+        queue["output"]
+            .as_str()
+            .unwrap()
+            .contains("Parsing or semantic analysis failed")
+    );
+    // Its committed traces with it: broken, not disallowed, and breaking nothing.
+    let file = ".truefit/traces/queue/reject/3.jsonl";
+    let wrong = &queue["wrong"];
+    assert_eq!(
+        wrong[1],
+        format!("reject trace {file} is broken"),
+        "{out:#}"
+    );
+    let unread = format!("reject trace {file}: its invariants' check is broken: Error: Parsing");
+    assert!(wrong[2].as_str().unwrap().starts_with(&unread), "{out:#}");
+    assert!(
+        out["next"]
+            .as_str()
+            .unwrap()
+            .contains("TLC could not check a model: correct the spec or config"),
+        "{out:#}"
+    );
 }
 
 #[test]
@@ -1059,10 +1092,10 @@ fn a_trace_the_model_allows_passes_and_one_it_does_not_names_its_first_disallowe
     let (code, out) = truefit_in(&dir, &["model", "--trace", ".truefit/seeds/3.json"]);
     assert_eq!(code, Some(1), "{out:#}");
     assert_eq!(out["trace"]["step"], 3);
-    // Its first record disallowed: nothing after.
+    // Its first record disallowed: nothing after; a quote, backslash or newline in a record is no TLA+ fault.
     std::fs::write(
         dir.join("first.jsonl"),
-        r#"{"step":1,"state":{"applied":[0,1,0],"next":1}}"#,
+        r#"{"step":1,"state":{"applied":[0,1,0],"next":1},"note":"a \"quote\", a back\\slash\nand a line"}"#,
     )
     .unwrap();
     let (_, out) = truefit_in(&dir, &["model", "--trace", "first.jsonl"]);
@@ -1154,18 +1187,22 @@ fn a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks
         ".truefit/traces/queue/accept/1.jsonl is disallowed at step 3",
     );
     assert!(!strict.contains("reject"), "{strict}");
-    std::fs::write(dir.join("Queue.tla"), &spec).unwrap();
-    // Without a reject trace the model still passes; its promises are unbacked.
-    std::fs::remove_dir_all(dir.join(".truefit/traces/queue/reject")).unwrap();
-    let (code, out) = truefit_in(&dir, &["model"]);
-    assert_eq!(code, Some(0), "{out:#}");
-    assert_eq!(out["models"][0]["traces"]["reject"], serde_json::json!([]));
     truefit_in(&dir, &["sim", "--seeds", "20"]);
     let why = |dir: &Path| {
         let (_, out) = truefit_in(dir, &["promise"]);
         assert_eq!(out["promises"][0]["status"], "unbacked", "{out:#}");
         out["promises"][0]["why"].as_str().unwrap().to_string()
     };
+    // A failed check backs nothing, nor a record with no accept trace allowed.
+    let failed = why(&dir);
+    assert!(failed.contains("its last check fails"), "{failed}");
+    assert!(failed.contains("no accept trace it allows"), "{failed}");
+    std::fs::write(dir.join("Queue.tla"), &spec).unwrap();
+    // Without a reject trace the model still passes; its promises are unbacked.
+    std::fs::remove_dir_all(dir.join(".truefit/traces/queue/reject")).unwrap();
+    let (code, out) = truefit_in(&dir, &["model"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["models"][0]["traces"]["reject"], serde_json::json!([]));
     assert!(why(&dir).contains("no reject trace it disallows that breaks `applied-once`"));
     // A reject trace that breaks another invariant (TypeOK: a head past N + 1) backs not this promise.
     let reject = dir.join(".truefit/traces/queue/reject");
@@ -1223,6 +1260,73 @@ fn tlc_whose_checksum_is_not_the_pinned_one_is_not_installed() {
     );
     let tlc = home.join(".local/share/truefit/tlc/1.7.4");
     assert_eq!(std::fs::read_dir(tlc).unwrap().count(), 0);
+}
+
+/// What TLC's install and run cannot reach is a fault naming it, before any
+/// TLC runs: no HOME, no curl, a source curl cannot read, no java.
+#[test]
+fn tlc_installs_from_its_source_and_a_missing_home_curl_source_or_java_is_a_fault() {
+    let dir = model_sample("model-reach", &[]);
+    // The pinned TLC in this HOME, installed if it is not yet: a missing trace faults before TLC runs.
+    let (code, out) = truefit_in(&dir, &["model", "--trace", "none.jsonl"]);
+    assert_eq!(code, Some(2), "{out:#}");
+    let pinned = PathBuf::from(std::env::var("HOME").unwrap())
+        .join(".local/share/truefit/tlc/1.7.4/tla2tools.jar");
+    let home = config("model-reach-home", "");
+    let tlc = home.join(".local/share/truefit/tlc/1.7.4");
+    let _ = std::fs::remove_dir_all(home.join(".local"));
+    // A PATH with curl on it and nothing else.
+    let bin = home.join("bin");
+    let _ = std::fs::remove_dir_all(&bin);
+    std::fs::create_dir_all(&bin).unwrap();
+    let curl = Command::new("sh")
+        .args(["-c", "command -v curl"])
+        .output()
+        .unwrap();
+    std::os::unix::fs::symlink(
+        String::from_utf8(curl.stdout).unwrap().trim(),
+        bin.join("curl"),
+    )
+    .unwrap();
+    let fault = |home: Option<&Path>, path: &Path, from: &Path| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_truefit"));
+        c.arg("model")
+            .current_dir(&dir)
+            .env("PATH", path)
+            .env("TRUEFIT_TLC_FROM", format!("file://{}", from.display()));
+        match home {
+            Some(h) => c.env("HOME", h),
+            None => c.env_remove("HOME"),
+        };
+        let out = c.output().unwrap();
+        assert_eq!(out.status.code(), Some(2));
+        let out: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(out["error"][0]["fix"].is_string(), "{out:#}");
+        out["error"][0]["fault"].as_str().unwrap().to_string()
+    };
+    let says = |fault: String, what: &str| assert!(fault.contains(what), "{fault}");
+    says(fault(None, &bin, &pinned), "HOME is not set");
+    says(
+        fault(Some(&home), &home.join("none"), &pinned),
+        "1.7.4 from file://",
+    );
+    says(fault(Some(&home), &home.join("none"), &pinned), ": curl: ");
+    says(
+        fault(Some(&home), &bin, &home.join("none.jar")),
+        ": curl exit status",
+    );
+    assert_eq!(std::fs::read_dir(&tlc).unwrap().count(), 0);
+    // Installed from its source; then there is no java to run it on.
+    says(fault(Some(&home), &bin, &pinned), "cannot run TLC (java)");
+    let installed: Vec<_> = std::fs::read_dir(&tlc)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(installed, ["tla2tools.jar"]);
+    assert_eq!(
+        std::fs::read(tlc.join("tla2tools.jar")).unwrap(),
+        std::fs::read(&pinned).unwrap()
+    );
 }
 
 #[test]
@@ -1477,7 +1581,13 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
     );
     let (code, _) = truefit_in(&dir, &["promise", "--mark", &hash]);
     assert_eq!(code, Some(2));
-    let (_, out) = truefit_in(&dir, &["promise", "--mark", &hash, "not"]);
+    let (_, out) = truefit_in(
+        &dir,
+        &["promise", "--mark", &hash, "not", "--why", "a description"],
+    );
+    let marks = std::fs::read_to_string(dir.join(".truefit/promises.json")).unwrap();
+    let marks: Value = serde_json::from_str(&marks).unwrap();
+    assert_eq!(marks[&hash]["why"], "a description", "{marks:#}");
     assert_eq!(
         out["candidates"]["unmarked"],
         serde_json::json!([]),
@@ -1704,11 +1814,22 @@ fn a_file_fixed_twice_is_owed_a_promise_until_a_check_covers_it_or_it_is_marked_
     let (_, out) = truefit_in(&dir, &["next"]);
     assert_eq!(out["task"]["kind"], "fixed-often", "{out:#}");
     assert_ne!(out["task"]["evidence"]["hash"], hash.as_str());
-    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap()
-        + "[sim]\nrun = [\"./sim\"]\ncode = [\"*.awk\"]\n\n[[promise]]\nname = \"charged-once\"\nsays = \"An order is charged once.\"\nsource = \"README.md:1\"\ncheck = [\"sim\"]\n";
-    std::fs::write(dir.join("truefit.toml"), toml).unwrap();
-    let (_, out) = truefit_in(&dir, &["next", "--all"]);
-    assert_eq!(out["counts"].get("fixed-often"), None, "{out:#}");
+    let base = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let promise = |check: &str| {
+        format!(
+            "\n[[promise]]\nname = \"charged-once\"\nsays = \"An order is charged once.\"\nsource = \"README.md:1\"\ncheck = [\"{check}\"]\n"
+        )
+    };
+    for toml in [
+        "[sim]\nrun = [\"./sim\"]\ncode = [\"*.awk\"]\n".to_string() + &promise("sim"),
+        // A model's `covers` naming the file answers as the simulation's code does.
+        "[[model]]\nname = \"ledger\"\nspec = \"L.tla\"\nconfig = \"L.cfg\"\ncommit = \"x\"\ncovers = [{ action = \"Charge\", file = \"ledger.awk\", function = \"main\" }]\n".to_string()
+            + &promise("model ledger"),
+    ] {
+        std::fs::write(dir.join("truefit.toml"), base.clone() + &toml).unwrap();
+        let (_, out) = truefit_in(&dir, &["next", "--all"]);
+        assert_eq!(out["counts"].get("fixed-often"), None, "{toml}: {out:#}");
+    }
 }
 
 #[test]
