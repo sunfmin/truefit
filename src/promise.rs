@@ -14,12 +14,17 @@ pub const MARKS: &str = ".truefit/promises.json";
 /// The checks a promise may name, from the cheapest.
 const LADDER: [&str; 4] = ["test", "contract", "sim", "model"];
 
-/// The words a sentence that makes a promise reads with.
-const WORDS: &str = "never, always, at most, exactly once, only, within, every";
+/// The words a sentence that makes a promise reads with: English, Chinese,
+/// Japanese.
+const WORDS: &str = "never, always, at most, exactly once, only, within, every, \
+绝不, 决不, 永不, 从不, 不会, 一律, 始终, 总是, 仅, 只, 只有, 每次, 每个, 最多, 至多, 至少, 恰好一次, 以内, 之内, 不超过, 100%, \
+決して, 絶対に, 必ず, 常に, 毎回, のみ, だけ, 最大, 少なくとも, 一度だけ, 一回だけ, 超えない";
 
 /// The words of a promise about what runs at once or in an order the system
 /// does not choose: one that needs both `sim` and `model`.
-const CONCURRENT: &str = "at once, concurrent, concurrently, in parallel, simultaneous, race, out of order, reorder, crash, crashes, restart, retry, retries, lease, queue, lost, twice, deliver, delivered, redelivered, exactly once, at least once";
+const CONCURRENT: &str = "at once, concurrent, concurrently, in parallel, simultaneous, race, out of order, reorder, crash, crashes, restart, retry, retries, lease, queue, lost, twice, deliver, delivered, redelivered, exactly once, at least once, \
+同时, 并发, 并行, 乱序, 竞态, 重试, 崩溃, 重启, 中断后, 丢失, 重复, 两次, 恰好一次, 至少一次, \
+同時, 並行, 並列, 順不同, 再試行, リトライ, クラッシュ, 再起動, 中断, 失われ, 重複, 二重, 一度だけ";
 
 /// `[promises]`: the files whose sentences are candidates, and how many
 /// days of history the fixes are read from.
@@ -280,15 +285,18 @@ fn sentences(root: &Path, config: &Config) -> Vec<Value> {
 }
 
 /// A Markdown text's sentences, each with the line it starts on: paragraphs,
-/// list items and table cells split at `.`, `?` or `!` before a space; code
-/// blocks and headings are none.
+/// list items, table cells and quotes split at `.`, `?` or `!` before a space,
+/// at `。`, `！` or `？`, and at a hard line break; code blocks and headings
+/// are none.
 fn split(text: &str) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut block: Vec<(usize, &str)> = Vec::new();
     let mut fenced = false;
     for (i, line) in text.lines().enumerate() {
-        let t = line.trim();
-        let item = t.starts_with(['-', '*', '+'])
+        let t = line.trim().trim_start_matches('>').trim();
+        let item = ["-", "*", "+"]
+            .iter()
+            .any(|m| t == *m || t.starts_with(&format!("{m} ")))
             || t.split_once(". ")
                 .is_some_and(|(n, _)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
         if t.starts_with("```") || fenced || t.is_empty() || t.starts_with(['#', '|']) || item {
@@ -307,6 +315,12 @@ fn split(text: &str) -> Vec<(usize, String)> {
                 false => t,
             };
             block.push((i + 1, t.trim()));
+            // A hard line break ends the block, as one ends each field of a
+            // `> **Key**: value  ` list.
+            if line.ends_with("  ") || t.ends_with('\\') {
+                sentences_of(&block, &mut out);
+                block.clear();
+            }
         }
     }
     sentences_of(&block, &mut out);
@@ -316,17 +330,32 @@ fn split(text: &str) -> Vec<(usize, String)> {
 fn sentences_of(block: &[(usize, &str)], out: &mut Vec<(usize, String)>) {
     let mut s = String::new();
     let mut start = 0;
+    let push = |s: &mut String, start: &mut usize, line: usize, piece: &str| {
+        if s.is_empty() {
+            *start = line;
+        } else {
+            s.push(' ');
+        }
+        s.push_str(piece);
+    };
     for (line, text) in block {
         for word in text.split_whitespace() {
-            if s.is_empty() {
-                start = *line;
-            } else {
-                s.push(' ');
+            // A sentence in Chinese or Japanese ends at its full-width mark,
+            // with no space after it: the word is cut there.
+            let mut rest = word;
+            while let Some(end) = cjk_end(rest) {
+                let (piece, after) = rest.split_at(end);
+                push(&mut s, &mut start, *line, piece);
+                out.push((start, std::mem::take(&mut s)));
+                rest = after;
             }
-            s.push_str(word);
-            let body = word.trim_end_matches(['.', '?', '!', ')', '"', '*', '`']);
-            if body.len() < word.len()
-                && word[body.len()..].starts_with(['.', '?', '!'])
+            if rest.is_empty() {
+                continue;
+            }
+            push(&mut s, &mut start, *line, rest);
+            let body = rest.trim_end_matches(['.', '?', '!', ')', '"', '*', '`']);
+            if body.len() < rest.len()
+                && rest[body.len()..].starts_with(['.', '?', '!'])
                 && !body.contains('.')
             {
                 out.push((start, std::mem::take(&mut s)));
@@ -338,7 +367,20 @@ fn sentences_of(block: &[(usize, &str)], out: &mut Vec<(usize, String)>) {
     }
 }
 
-/// Whether `text` has any of `words` (`, `-separated), each as whole words, in any case.
+/// Where the first sentence in `word` ends at a full-width `。`, `！`, `？`
+/// (or `．`), with the marks, closing quotes and brackets right after it.
+fn cjk_end(word: &str) -> Option<usize> {
+    let (i, c) = word.char_indices().find(|(_, c)| "。！？．".contains(*c))?;
+    let tail = &word[i + c.len_utf8()..];
+    let closing = tail
+        .find(|c: char| !"。！？．」』）】”’\"*`)".contains(c))
+        .unwrap_or(tail.len());
+    Some(i + c.len_utf8() + closing)
+}
+
+/// Whether `text` has any of `words` (`, `-separated): an English one as a
+/// whole word, in any case; one with any other character (Chinese, Japanese,
+/// `100%`) anywhere in the text, as those scripts put no space between words.
 pub fn has_any(text: &str, words: &str) -> bool {
     let words_of = |s: &str| {
         let words: Vec<String> = s
@@ -349,8 +391,14 @@ pub fn has_any(text: &str, words: &str) -> bool {
             .collect();
         format!(" {} ", words.join(" "))
     };
-    let text = words_of(text);
-    words.split(", ").any(|w| text.contains(&words_of(w)))
+    let whole = words_of(text);
+    words.split(", ").map(str::trim).any(|w| {
+        if w.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ') {
+            whole.contains(&words_of(w))
+        } else {
+            text.contains(w)
+        }
+    })
 }
 
 /// A sentence as compared: its words, without Markdown's `*` and backticks.
@@ -489,6 +537,10 @@ mod tests {
 
     #[test]
     fn split_finds_sentences_with_their_lines_but_not_code_or_headings() {
+        assert_eq!(
+            split("**Bold** is no item.\n"),
+            vec![(1, "**Bold** is no item.".into())]
+        );
         let text = "# Never a heading\n\nOne line. And it\nwraps, e.g. here! Done\n- an item\n```\nnever code\n```\n| never | a cell. Two |\n";
         assert_eq!(
             split(text),
@@ -502,6 +554,42 @@ mod tests {
                 (9, "Two".into()),
             ]
         );
+    }
+
+    #[test]
+    fn split_cuts_chinese_and_japanese_at_full_width_marks() {
+        let quote = "> **状态**：草案  \n> **原则**：100% 本地。\n";
+        assert_eq!(
+            split(quote),
+            vec![
+                (1, "**状态**：草案".into()),
+                (2, "**原则**：100% 本地。".into())
+            ]
+        );
+        let text = "消息绝不丢失。重试最多三次！真的？「只此一次。」然后\n- 一度だけ実行する。決して止まらない\n";
+        assert_eq!(
+            split(text),
+            vec![
+                (1, "消息绝不丢失。".into()),
+                (1, "重试最多三次！".into()),
+                (1, "真的？".into()),
+                (1, "「只此一次。」".into()),
+                (1, "然后".into()),
+                (2, "一度だけ実行する。".into()),
+                (2, "決して止まらない".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn chinese_and_japanese_words_match_inside_a_sentence() {
+        assert!(has_any("所有模型 100% 本地运行。", WORDS));
+        assert!(has_any("仅在空闲时执行。", WORDS));
+        assert!(has_any("結果は必ず保存される。", WORDS));
+        assert!(!has_any("这是一张照片。", WORDS));
+        assert!(has_any("崩溃后重启，任务不会丢失。", CONCURRENT));
+        assert!(has_any("再試行しても一度だけ適用される。", CONCURRENT));
+        assert!(!has_any("仅在空闲时执行。", CONCURRENT));
     }
 
     #[test]

@@ -394,10 +394,18 @@ one", "within N seconds"); one no check keeps can break unseen.
   that ended: see "A promise is kept only until its end"), or `kept` (not
   checked, and why, with `until` when it is kept to a date). And `candidates`: the
   sentences of `[promises] sources` with a promise word (never, always, at
-  most, exactly once, only, within, every), `found` in all, those
+  most, exactly once, only, within, every; in Chinese 绝不, 永不, 不会,
+  始终, 总是, 仅, 只, 每次, 最多, 至少, 以内, 不超过, 100% …; in
+  Japanese 決して, 必ず, 常に, のみ, だけ, 以内, 最大, 一度だけ …; an
+  English word matches whole, a Chinese or Japanese one anywhere in the
+  sentence), `found` in all, those
   `unmarked`, and those marked a promise that no `[[promise]]` registers
   (`unregistered`); each with its `source` (file:line), `sentence`, `hash`
-  and the `rung` its words point to (`test`, or `sim and model`). A
+  and the `rung` its words point to (`test`, or `sim and model` for words
+  of what runs at once or out of order: concurrent, retry, crash, lost …,
+  同时, 并发, 乱序, 重试, 崩溃, 重启, 丢失, 重复 …, 同時, 並行, 再試行,
+  再起動, 重複 …). A sentence ends at `.`, `?` or `!` before a space, at
+  `。`, `！` or `？`, and at a hard line break. A
   candidate that holds a registered promise's `says` is that promise.
 - `truefit promise --mark <hash> <promise|not> [<hash> <mark>]...
   [--why <reason>]`: marks candidates, kept in `.truefit/promises.json` by

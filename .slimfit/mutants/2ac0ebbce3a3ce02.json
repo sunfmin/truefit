@@ -1,0 +1,6 @@
+{
+  "tree": "5cdcec4be9d79f5b5cb91616861ff729e27191f6+d1fba762150c532c",
+  "picker": "codex:01a2091f-449b-7bd0-b39e-0e7c8864147b:default",
+  "author": "claude-code:9afb1fa1-661d-595a-a2af-5d255afa86be:opus",
+  "none": "The shown assertions exercise the behavior-changing candidates, and replacing `<` with `<=` is equivalent because an empty suffix cannot start with sentence punctuation."
+}
