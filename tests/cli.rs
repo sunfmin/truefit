@@ -1724,6 +1724,52 @@ fn a_promise_of_what_runs_at_once_needs_sim_and_model_or_a_reason() {
 }
 
 #[test]
+fn chinese_and_japanese_promises_are_candidates_with_their_rungs_and_stable_hashes() {
+    let dir = config("promise-cjk", "[promises]\nsources = [\"SPEC.md\"]\n");
+    std::fs::write(
+        dir.join("SPEC.md"),
+        "# 规格\n\n这是一张照片。索引仅在空闲时执行。\n崩溃重启后，任务不会丢失！\n\n- 結果は必ず保存される。再試行しても一度だけ適用される。\n",
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let found: Vec<(&str, &str, &str)> = out["candidates"]["unmarked"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["source"].as_str().unwrap(),
+                c["sentence"].as_str().unwrap(),
+                c["rung"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            ("SPEC.md:3", "索引仅在空闲时执行。", "test"),
+            ("SPEC.md:4", "崩溃重启后，任务不会丢失！", "sim and model"),
+            ("SPEC.md:6", "結果は必ず保存される。", "test"),
+            (
+                "SPEC.md:6",
+                "再試行しても一度だけ適用される。",
+                "sim and model"
+            ),
+        ],
+        "{out:#}"
+    );
+    let (_, again) = truefit_in(&dir, &["promise"]);
+    assert_eq!(again["candidates"], out["candidates"]);
+    let hash = out["candidates"]["unmarked"][0]["hash"].as_str().unwrap();
+    let (_, marked) = truefit_in(&dir, &["promise", "--mark", hash, "not"]);
+    assert_eq!(
+        marked["candidates"]["unmarked"].as_array().unwrap().len(),
+        3
+    );
+}
+
+#[test]
 fn a_candidate_marked_a_promise_fails_until_registered_and_readmes_are_read_by_default() {
     let toml = "[[standin]]\nname = \"git\"\nrun = [\"true\"]\nreal = [\"true\"]\nfaults = [\"gone\"]\n[[standin.case]]\nname = \"c\"\nfault = \"gone\"\n";
     let dir = config("promise-default", toml);
