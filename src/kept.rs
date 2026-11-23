@@ -145,25 +145,21 @@ fn issue(i: &str) -> Option<(&str, &str)> {
 
 /// Whether factorium's tracker says issue `i` is closed, or why it cannot tell.
 fn closed(root: &Path, i: &str) -> Result<bool, String> {
-    let (checkout, n) = issue(i).ok_or("no issue")?;
+    let (checkout, n) = issue(i).unwrap_or((i, ""));
     let program = contract::find(root, "factorium").ok_or("factorium is not on PATH")?;
-    let out = std::process::Command::new(program)
+    let shown: Value = std::process::Command::new(program)
         .args(["issue", "show", checkout, n])
         .current_dir(root)
         .stdin(std::process::Stdio::null())
         .output()
-        .map_err(|e| format!("cannot run factorium: {e}"))?;
-    let shown: Value = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
-    match shown["status"].as_str() {
-        Some(s) if out.status.success() => Ok(s == "closed"),
-        _ => Err(format!(
-            "`factorium issue show {checkout} {n}` answered no status: {}",
-            String::from_utf8_lossy(&out.stderr)
-                .lines()
-                .next()
-                .unwrap_or("")
-        )),
-    }
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| serde_json::from_slice(&o.stdout).ok())
+        .unwrap_or_default();
+    let status = shown["status"].as_str();
+    status
+        .map(|s| s == "closed")
+        .ok_or_else(|| format!("`factorium issue show {checkout} {n}` answered no status"))
 }
 
 /// The day (since 1970-01-01, UTC) the lines of `span` in truefit.toml last

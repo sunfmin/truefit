@@ -2064,7 +2064,7 @@ fn a_kept_promise_is_unchecked_once_its_issue_closes_and_kept_while_it_cannot_be
     std::fs::write(
         &fake,
         format!(
-            "#!/bin/sh\n[ \"$1 $2 $3 $4\" = \"issue show rollmind 80\" ] || exit 3\nprintf '{{\"checkout\":\"rollmind\",\"number\":80,\"status\":\"%s\"}}\\n' \"$(cat {})\"\n",
+            "#!/bin/sh\n[ \"$1 $2 $3 $4\" = \"issue show rollmind 80\" ] || exit 3\n[ \"$(cat {0})\" = gone ] && exit 1\nprintf '{{\"checkout\":\"rollmind\",\"number\":80,\"status\":\"%s\"}}\\n' \"$(cat {0})\"\n",
             state.display()
         ),
     )
@@ -2073,6 +2073,17 @@ fn a_kept_promise_is_unchecked_once_its_issue_closes_and_kept_while_it_cannot_be
     let (code, out) = truefit_with_path(&dir, &bin, &["promise"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["promises"][0]["status"], "kept");
+    // One it cannot read stays kept, and says so.
+    std::fs::write(&state, "gone").unwrap();
+    let (code, out) = truefit_with_path(&dir, &bin, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(
+        out["promises"][0]["note"]
+            .as_str()
+            .unwrap_or("")
+            .contains("answered no status: whether rollmind#80 is closed is not read"),
+        "{out:#}"
+    );
     std::fs::write(&state, "closed").unwrap();
     let (code, out) = truefit_with_path(&dir, &bin, &["promise"]);
     assert_eq!(code, Some(1), "{out:#}");
