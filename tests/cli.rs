@@ -2001,3 +2001,288 @@ name = "c"
     assert_eq!(statuses(&out), [("saved", "checked")], "{out:#}");
     assert_eq!(code, Some(0), "{out:#}");
 }
+
+/// truefit in `dir` with PATH only `bin` and the system's, where a fake
+/// `factorium` may stand.
+fn truefit_with_path(dir: &Path, bin: &Path, args: &[&str]) -> (Option<i32>, Value) {
+    let out = Command::new(env!("CARGO_BIN_EXE_truefit"))
+        .args(args)
+        .current_dir(dir)
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .output()
+        .unwrap();
+    (
+        out.status.code(),
+        serde_json::from_slice(&out.stdout).unwrap_or(Value::Null),
+    )
+}
+
+/// One promise, `kept` with its reason, and `end`.
+fn kept(end: &str) -> String {
+    format!(
+        "[promises]\nsources = []\n[[promise]]\nname = \"offline\"\nsays = \"No photo is ever uploaded.\"\nsource = \"SPEC.md:5\"\nkept = \"not built yet: phase 3 adds the test\"\n{end}"
+    )
+}
+
+fn why(out: &Value) -> &str {
+    out["promises"][0]["why"].as_str().unwrap_or("")
+}
+
+#[test]
+fn a_kept_promise_whose_date_passes_is_unchecked_and_next_asks_for_its_check() {
+    let dir = config("kept-until", &kept("kept_until = \"2999-01-01\"\n"));
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "kept");
+    assert_eq!(out["promises"][0]["until"], "2999-01-01", "{out:#}");
+    // Kept on its day, unchecked the day after.
+    let today = utc_day(0);
+    std::fs::write(
+        dir.join("truefit.toml"),
+        kept(&format!("kept_until = \"{today}\"\n")),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    std::fs::write(
+        dir.join("truefit.toml"),
+        kept("kept_until = \"2000-01-01\"\n"),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "unchecked");
+    assert!(
+        why(&out).contains("kept until 2000-01-01, which has passed"),
+        "{out:#}"
+    );
+    assert!(
+        why(&out).contains("not built yet: phase 3 adds the test"),
+        "{out:#}"
+    );
+    let (_, next) = truefit_in(&dir, &["next"]);
+    assert_eq!(next["task"]["kind"], "unchecked-promise", "{next:#}");
+    assert!(
+        next["task"]["summary"]
+            .as_str()
+            .unwrap()
+            .starts_with("give offline its check: "),
+        "{next:#}"
+    );
+}
+
+#[test]
+fn a_kept_promise_is_unchecked_once_a_path_it_waits_for_appears() {
+    let dir = config(
+        "kept-absent",
+        &kept("kept_while_absent = [\"App/**/*.swift\"]\n"),
+    );
+    std::fs::create_dir_all(dir.join("App/RollMind/People")).unwrap();
+    std::fs::write(dir.join("App/README.md"), "").unwrap();
+    std::fs::create_dir_all(dir.join("App/.build")).unwrap();
+    std::fs::write(dir.join("App/.build/Gen.swift"), "").unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "kept");
+    std::fs::write(dir.join("App/RollMind/People/Album.swift"), "").unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "unchecked");
+    assert!(
+        why(&out).contains("App/RollMind/People/Album.swift exists (`App/**/*.swift`)"),
+        "{out:#}"
+    );
+    // `**` is also no directory at all.
+    std::fs::remove_dir_all(dir.join("App/RollMind")).unwrap();
+    let (code, _) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0));
+    std::fs::write(dir.join("App/Main.swift"), "").unwrap();
+    let (code, _) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1));
+}
+
+#[test]
+fn a_kept_promise_is_unchecked_once_its_issue_closes_and_kept_while_it_cannot_be_read() {
+    let dir = config("kept-issue", &kept("kept_until_issue = \"rollmind#80\"\n"));
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let (code, out) = truefit_with_path(&dir, &bin, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(
+        out["promises"][0]["note"]
+            .as_str()
+            .unwrap_or("")
+            .contains("whether rollmind#80 is closed is not read"),
+        "{out:#}"
+    );
+    let fake = bin.join("factorium");
+    let state = dir.join("state");
+    std::fs::write(&state, "ready").unwrap();
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\n[ \"$1 $2 $3 $4\" = \"issue show rollmind 80\" ] || exit 3\n[ \"$(cat {0})\" = gone ] && exit 1\nprintf '{{\"checkout\":\"rollmind\",\"number\":80,\"status\":\"%s\"}}\\n' \"$(cat {0})\"\n",
+            state.display()
+        ),
+    )
+    .unwrap();
+    Command::new("chmod").arg("+x").arg(&fake).status().unwrap();
+    let (code, out) = truefit_with_path(&dir, &bin, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "kept");
+    // One it cannot read stays kept, and says so.
+    std::fs::write(&state, "gone").unwrap();
+    let (code, out) = truefit_with_path(&dir, &bin, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(
+        out["promises"][0]["note"]
+            .as_str()
+            .unwrap_or("")
+            .contains("answered no status: whether rollmind#80 is closed is not read"),
+        "{out:#}"
+    );
+    std::fs::write(&state, "closed").unwrap();
+    let (code, out) = truefit_with_path(&dir, &bin, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["promises"][0]["status"], "unchecked");
+    assert!(why(&out).contains("rollmind#80 is closed"), "{out:#}");
+}
+
+/// The UTC date `ago` days before today, as YYYY-MM-DD.
+fn utc_day(ago: u32) -> String {
+    let out = Command::new("date")
+        .args(["-u", &format!("-v-{ago}d"), "+%F"])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+/// Makes `dir` a git repo whose one commit, of all its files, is dated `date` (YYYY-MM-DD).
+fn commit_on(dir: &Path, date: &str) {
+    let at = format!("{date}T12:00:00Z");
+    for args in [
+        &["init", "-q"][..],
+        &["add", "."],
+        &["commit", "-qm", "promises"],
+    ] {
+        let ok = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_DATE", &at)
+            .env("GIT_COMMITTER_DATE", &at)
+            .status()
+            .unwrap();
+        assert!(ok.success());
+    }
+}
+
+#[test]
+fn a_bare_kept_is_warned_for_14_days_after_its_line_changed_then_unchecked() {
+    // Changed today: kept, warned, with the end to give it.
+    let dir = config("kept-bare-new", &kept(""));
+    let _ = std::fs::remove_dir_all(dir.join(".git"));
+    commit_on(&dir, &utc_day(0));
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    let p = &out["promises"][0];
+    assert_eq!(p["status"], "kept", "{out:#}");
+    assert!(
+        p["warning"].as_str().unwrap_or("").contains("no end"),
+        "{out:#}"
+    );
+    assert!(
+        p["suggest"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("kept_until = \""),
+        "{out:#}"
+    );
+    assert!(
+        out["next"].as_str().unwrap().contains("`suggest`"),
+        "{out:#}"
+    );
+
+    // Changed long ago: past the grace, unchecked, still with its suggestion.
+    let dir = config("kept-bare-old", &kept(""));
+    let _ = std::fs::remove_dir_all(dir.join(".git"));
+    commit_on(&dir, "2000-01-01");
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    let p = &out["promises"][0];
+    assert_eq!(p["status"], "unchecked", "{out:#}");
+    assert!(why(&out).contains("last changed on 2000-01-01"), "{out:#}");
+    assert!(
+        why(&out).contains("not built yet: phase 3 adds the test"),
+        "{out:#}"
+    );
+    assert!(p["suggest"].is_string(), "{out:#}");
+
+    // The grace's last day is kept; the day after is not.
+    for (ago, code) in [(14, Some(0)), (15, Some(1))] {
+        let dir = config(&format!("kept-bare-{ago}"), &kept(""));
+        let _ = std::fs::remove_dir_all(dir.join(".git"));
+        commit_on(&dir, &utc_day(ago));
+        let (got, out) = truefit_in(&dir, &["promise"]);
+        assert_eq!(got, code, "{ago} days ago: {out:#}");
+    }
+
+    // Kept forever, with its reason: no end is asked.
+    std::fs::write(dir.join("truefit.toml"), kept("kept_forever = true\n")).unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
+    assert!(out["promises"][0]["warning"].is_null(), "{out:#}");
+
+    // No history dates its line: there is no grace to count.
+    let dir = config("kept-bare-nogit", &kept(""));
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(1), "{out:#}");
+    assert!(why(&out).contains("no git history dates"), "{out:#}");
+}
+
+#[test]
+fn a_kept_end_is_declared_rightly_or_exits_2() {
+    let promise =
+        |lines: &str| format!("[[promise]]\nname = \"p\"\nsays = \"s\"\nsource = \"f:1\"\n{lines}");
+    for (bad, said) in [
+        (
+            "kept_until = \"2026-12-01\"\ncheck = [\"test\"]\n",
+            "an end of `kept`",
+        ),
+        ("kept = \"k\"\nkept_until = \"soon\"\n", "is no date"),
+        ("kept = \"k\"\nkept_until_issue = \"80\"\n", "is no issue"),
+        (
+            "kept = \"k\"\nkept_until_issue = \"rollmind#x\"\n",
+            "is no issue",
+        ),
+        ("kept_while_absent = [\"App\"]\n", "an end of `kept`"),
+        ("kept_until_issue = \"rollmind#80\"\n", "an end of `kept`"),
+        (
+            "kept = \"k\"\nkept_forever = true\nkept_while_absent = [\"App\"]\n",
+            "both",
+        ),
+        (
+            "kept = \"k\"\nkept_while_absent = [\"\"]\n",
+            "an empty path",
+        ),
+        (
+            "kept = \"k\"\nkept_forever = true\nkept_until = \"2999-01-01\"\n",
+            "both",
+        ),
+        (
+            "kept = \" \"\nkept_forever = true\n",
+            "why no check can exist",
+        ),
+    ] {
+        let dir = config("kept-faults", &promise(bad));
+        let (code, out) = truefit_in(&dir, &["promise"]);
+        assert_eq!(code, Some(2), "{bad}: {out:#}");
+        assert!(
+            out["error"][0]["fault"]
+                .as_str()
+                .unwrap_or("")
+                .contains(said),
+            "{bad}: {out:#}"
+        );
+    }
+}

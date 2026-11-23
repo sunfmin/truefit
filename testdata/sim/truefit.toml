@@ -52,9 +52,10 @@ name = "head-in-range"
 says = "Only the messages 1 to N are ever in the queue's head."
 source = "SPEC.md:8"
 
-# Kept: not checked here, and why.
+# Kept for good: no check of the system can keep it, and why.
 [[promise]]
 name = "seeded"
 says = "Every run of the simulation is chosen from its seed alone."
 source = "SPEC.md:9"
 kept = "truefit holds it: `truefit sim` reruns each failing seed and fails one whose runs differ"
+kept_forever = true

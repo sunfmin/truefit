@@ -1,0 +1,10 @@
+{
+  "tree": "ba6993cb96b39aaffa81d77da4ef1463ad9ddea0+d1fba762150c532c",
+  "lines": 175,
+  "serves": "truefit#26",
+  "considered": "contract::days/civil/today/git/find and next::expand reused rather than copied; history.rs's git reading weighed and not shared (it reads log, this reads blame); promise::status's existing kept branch extended in place rather than a second status path",
+  "reviewer": "codex:01a20928-5111-7bf3-a7ca-fbccb0609678:default",
+  "author": "claude-code:58e68d5f-f749-5622-a164-d669d1a3d0c8:opus",
+  "cut": "In src/kept.rs and src/promise.rs, have judge write report fields directly and return only status and reason, removing the temporary map and copy loop. In src/kept.rs, compute the grace deadline once and write suggest once, preserving the distinct messages for recent, expired, and undated entries. In src/promise.rs, drop the redundant serde defaults on the three optional kept fields. These cuts are based on the supplied diff because workspace access was unavailable.",
+  "answer": "Made all three: judge takes the report and writes until/note/warning/suggest itself (map and copy loop gone); the grace's last day and suggest are computed once; the three Option fields lose serde(default). Also made the has-end test one function shared by faults and judge. The rest is the feature: three ends, kept_forever, the grace from git blame, their faults, ** in globs."
+}

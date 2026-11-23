@@ -390,7 +390,9 @@ one", "within N seconds"); one no check keeps can break unseen.
   (each named check reaches it), `unreached` (a named check never reached
   it: `why` names which), `unbacked` (a model reaches it, but is not
   backed: see "A model checks a promise only when it is backed"),
-  `unchecked` (no check, or too cheap a one without its reason), or `kept` (not checked, and why). And `candidates`: the
+  `unchecked` (no check, too cheap a one without its reason, or a `kept`
+  that ended: see "A promise is kept only until its end"), or `kept` (not
+  checked, and why, with `until` when it is kept to a date). And `candidates`: the
   sentences of `[promises] sources` with a promise word (never, always, at
   most, exactly once, only, within, every; in Chinese 绝不, 永不, 不会,
   始终, 总是, 仅, 只, 每次, 最多, 至少, 以内, 不超过, 100% …; in
@@ -412,8 +414,9 @@ one", "within N seconds"); one no check keeps can break unseen.
   `failing-seed-promise` task of `truefit next` is marked by its evidence's
   `hash`, only `not`, and with its `--why`.
 
-It exits 0 when every promise is checked or kept and every candidate is
-marked and, if a promise, registered; 1 when not. It reads, never runs:
+It exits 0 when every promise is checked or kept (to an end not yet
+passed, or forever) and every candidate is marked and, if a promise,
+registered; 1 when not. It reads, never runs:
 the last `truefit sim`, the models' configs.
 
 ### The ladder
@@ -443,6 +446,32 @@ A check is reached, or the promise is `unreached`:
 Names are compared without case and punctuation: `applied-once` is the
 model's `AppliedOnce`.
 
+### A promise is kept only until its end
+
+A promise is `kept` without a check only while the reason it gives holds,
+and a reason such as "not built yet" ends. So `kept` names its end, one or
+more of:
+
+- `kept_until = "<YYYY-MM-DD>"`: after that date it is `unchecked`.
+- `kept_while_absent = ["<path or glob>"]` (`App/**/*.swift`; `**` is any
+  directories, none too): once a file it names exists, it is `unchecked`.
+- `kept_until_issue = "<checkout>#<n>"`: once `factorium issue show
+  <checkout> <n>` answers `status` `closed`, it is `unchecked`. Where it
+  cannot be read (factorium not on PATH) it stays kept, with a `note`.
+
+The first end that passes makes it `unchecked`, its `why` saying which
+end passed and the reason it was kept; `truefit next` files it as the
+`unchecked-promise` task "give <name> its check". A promise no check can
+ever keep (a legal promise, how the repos are set up) is `kept_forever =
+true`, with a `kept` that says why no check can exist.
+
+A `kept` with none of these is kept, with a `warning` and a `suggest`ed
+end (`kept_until`, the grace's last day), for 14 days after its line last
+changed (`git blame` of truefit.toml); from then on it is `unchecked`, its
+`why` saying since when, with a `suggest`ed end from today. A `kept` line
+no git history dates (truefit.toml untracked, or no repo) has no grace.
+Give each the end its reason names: that is how a repo moves to ends.
+
 ### `[[promise]]` in `truefit.toml`
 
 ```toml
@@ -456,14 +485,16 @@ says = "A message is never applied twice." # the sentence, quoted
 source = "SPEC.md:12"     # where the system makes it
 check = ["sim", "model queue"] # any of test, contract <stand-in>, sim, model <name>
 why = ""                  # the reason for a cheaper check on a concurrent one
-# kept = "<why it is not checked>", in place of check
+# kept = "<why it is not checked>", in place of check, with its end:
+# kept_until = "2027-03-01", kept_while_absent = ["App/**/*.swift"],
+# kept_until_issue = "rollmind#80", or kept_forever = true
 # concurrent = true: of the concurrent kind, though its words do not say so
 ```
 
 `testdata/sim/` is a worked example: `SPEC.md`'s four promises, one checked
 and reached (`applied-once`, after `truefit sim` and `truefit model`), one
 registered to `sim` and `model queue` that neither reaches (`no-lost-message`), one unchecked,
-one kept with its reason; and one candidate to mark `not`.
+one kept forever with its reason; and one candidate to mark `not`.
 
 ## `truefit next [--all]`
 
@@ -478,7 +509,8 @@ command, never a case, reads kept seeds without running the simulation, and
 compares models' coverage with git, never running TLC.
 
 - `no-contract`: a file under `[contract] standins` (paths, or globs whose
-  `*` and `?` match within one path part; a directory stands for its files)
+  `*` and `?` match within one path part, `**` any directories; a
+  directory stands for its files)
   that no `[[standin]]`'s `run` names. Where the stand-ins live is declared,
   not guessed: without `standins` none is looked for, and `notes` says so.
 - `stale-contract`: a declared stand-in whose last passing real run
@@ -499,7 +531,8 @@ compares models' coverage with git, never running TLC.
   promise that no `[[promise]]` registers (`evidence`: `unmarked`,
   `unregistered`): mark each, register each promise.
 - `unchecked-promise`, `unreached-promise`: a promise `truefit promise`
-  reports so, with its report as `evidence`.
+  reports so, with its report as `evidence`; an unchecked one's summary
+  is "give <name> its check: <why>", a `kept` whose end passed among them.
 - `fixed-often`: a file of the system's code changed by two or more fixes
   in the last `[promises] history_days`, that no registered promise's check
   covers (a `model`'s `covers` names it; a `sim` check covers `[sim] run`'s

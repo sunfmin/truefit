@@ -1,0 +1,39 @@
+{
+  "tree": "ba6993cb96b39aaffa81d77da4ef1463ad9ddea0+d1fba762150c532c",
+  "picker": "codex:01a2091f-040a-76d2-9536-d0d2c3dbe053:default",
+  "author": "claude-code:58e68d5f-f749-5622-a164-d669d1a3d0c8:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/kept.rs:69:18: replace > with >= in judge",
+        "why": "The date tests use a distant past and future date, leaving expiration on the named day untested.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/kept.rs:96:30: replace <= with > in judge",
+        "why": "The grace tests use a line changed today and one changed years ago, leaving the final day of grace untested.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/kept.rs:133:9: replace && with || in issue",
+        "why": "The malformed issue fixture lacks a separator, so it cannot catch a valid checkout paired with a nonnumeric issue number.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/kept.rs:122:63: replace || with && in has_end",
+        "why": "The invalid configurations use a date for both end conflicts, leaving a path or issue as the sole end untested in those cases.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/next.rs:211:32: replace && with || in below",
+        "why": "The recursive glob fixture uses visible directories, leaving untested whether a matching file in a hidden directory can end a promise.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}

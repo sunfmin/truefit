@@ -55,8 +55,13 @@ pub struct Promise {
     source: String,
     #[serde(default)]
     check: Vec<String>,
+    pub kept: Option<toml::Spanned<String>>,
+    pub kept_until: Option<String>,
     #[serde(default)]
-    kept: Option<String>,
+    pub kept_while_absent: Vec<String>,
+    pub kept_until_issue: Option<String>,
+    #[serde(default)]
+    pub kept_forever: bool,
     #[serde(default)]
     why: Option<String>,
     #[serde(default)]
@@ -96,6 +101,7 @@ pub fn faults(config: &Config) -> Vec<Value> {
                 "give it a `check`, or `kept = \"<why it is not checked>\"`, not both",
             ));
         }
+        faults.extend(crate::kept::faults(p));
         for (rung, arg) in p.checks() {
             let known = match rung {
                 "test" | "sim" => arg.is_empty(),
@@ -137,14 +143,20 @@ pub fn run(root: &Path, marks: &[&str], why: Option<&str>) -> Result<(Value, boo
         next.push("back each `unbacked` promise's model (`why`): commit a run it allows under .truefit/traces/<model>/accept/ and one that breaks the promise under reject/, then `truefit model <model>`");
     }
     if failing("unchecked") > 0 {
-        next.push("give each `unchecked` promise its checks from the ladder (`truefit --help`), or the reason it needs none");
+        next.push("give each `unchecked` promise its checks from the ladder (`truefit --help`), or the reason it needs none; one whose `kept` ended, or has no end past its grace, needs its check now (`why` says which), or an end that still holds");
     }
     if !unmarked.is_empty() || !unregistered.is_empty() {
         next.push("mark each `unmarked` candidate: `truefit promise --mark <hash> promise|not`; register each marked promise as a [[promise]]");
     }
     let ok = next.is_empty();
-    if ok {
-        next.push("nothing: every promise is checked and reached, or kept with its reason; commit .truefit/");
+    if promises
+        .iter()
+        .any(|p| p["status"] == "kept" && p["warning"].is_string())
+    {
+        next.push("give each `kept` promise with no end (`warning`) the end its reason names, before its grace runs out, as its `warning` and `suggest` say");
+    }
+    if next.is_empty() {
+        next.push("nothing: every promise is checked and reached, or kept with its reason and its end; commit .truefit/");
     }
     let report = json!({
         "promises": promises,
@@ -164,7 +176,7 @@ fn status<'p>(root: &Path, config: &Config, p: &'p Promise) -> (Value, Vec<(&'p 
     let mut report = json!({"name": p.name, "says": p.says, "source": p.source, "check": p.check});
     let mut models = Vec::new();
     let (status, why) = if let Some(kept) = &p.kept {
-        ("kept", kept.clone())
+        crate::kept::judge(root, p, kept.get_ref(), &mut report)
     } else if p.check.is_empty() {
         ("unchecked", "no check keeps it, and it is not kept".into())
     } else if p.concurrent()
@@ -484,7 +496,7 @@ pub fn tasks(root: &Path, config: &Config) -> Vec<Value> {
         };
         let steps = if kind == "unchecked-promise" {
             format!(
-                "Give promise `{}` its checks in {CONFIG}, from the cheapest rung that keeps it: `test`, `contract <stand-in>`, `sim`, `model <model>`. One about what runs at once or in an order the system does not choose (`truefit --help`, what to model) needs `sim` and `model`: write the simulation's check and the model's invariant by its name; a cheaper check needs its reason in `why`. One no check can keep is `kept = \"<why>\"`.",
+                "Give promise `{}` its checks in {CONFIG}, from the cheapest rung that keeps it: `test`, `contract <stand-in>`, `sim`, `model <model>`. One about what runs at once or in an order the system does not choose (`truefit --help`, what to model) needs `sim` and `model`: write the simulation's check and the model's invariant by its name; a cheaper check needs its reason in `why`. One no check can keep yet is `kept = \"<why>\"` with the end its reason names (`kept_until`, `kept_while_absent`, `kept_until_issue`), or `kept_forever = true` when no check can ever exist. One whose `kept` ended (its `why` says how) needs its check now; give it a new end only when its reason still holds.",
                 p.name
             )
         } else {
@@ -495,7 +507,10 @@ pub fn tasks(root: &Path, config: &Config) -> Vec<Value> {
         };
         tasks.push(json!({
             "kind": kind,
-            "summary": format!("promise {}: {}", p.name, s["why"].as_str().unwrap_or("")),
+            "summary": match kind {
+                "unchecked-promise" => format!("give {} its check: {}", p.name, s["why"].as_str().unwrap_or("")),
+                _ => format!("promise {}: {}", p.name, s["why"].as_str().unwrap_or("")),
+            },
             "files": [CONFIG, p.source.split(':').next().unwrap_or("")],
             "evidence": s,
             "steps": steps,
