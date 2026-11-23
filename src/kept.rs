@@ -121,7 +121,7 @@ pub fn judge(root: &Path, p: &Promise, reason: &str) -> (&'static str, String, M
         Some(day) => {
             extra.insert("suggest".into(), suggest(day + GRACE_DAYS).into());
             let warning = format!(
-                "kept with no end: from {} ({GRACE_DAYS} days after its line last changed, {}) it is reported unchecked",
+                "kept with no end: from {} ({GRACE_DAYS} days after its line last changed, {}) it is reported unchecked: give it the end its reason names, `suggest`'s or another ({ENDS})",
                 contract::civil(day + GRACE_DAYS + 1),
                 contract::civil(day)
             );

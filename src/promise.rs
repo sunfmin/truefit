@@ -151,7 +151,7 @@ pub fn run(root: &Path, marks: &[&str], why: Option<&str>) -> Result<(Value, boo
         .iter()
         .any(|p| p["status"] == "kept" && p["warning"].is_string())
     {
-        next.push("give each `kept` promise with no end (`warning`) the end its reason names, before its grace runs out: `suggest`'s date, kept_while_absent = [\"<a path the work adds>\"], kept_until_issue = \"<checkout>#<n>\", or kept_forever = true with a `kept` that says why no check can exist");
+        next.push("give each `kept` promise with no end (`warning`) the end its reason names, before its grace runs out, as its `warning` and `suggest` say");
     }
     if next.is_empty() {
         next.push("nothing: every promise is checked and reached, or kept with its reason and its end; commit .truefit/");
