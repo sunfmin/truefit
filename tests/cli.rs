@@ -1989,6 +1989,15 @@ fn a_kept_promise_whose_date_passes_is_unchecked_and_next_asks_for_its_check() {
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["promises"][0]["status"], "kept");
     assert_eq!(out["promises"][0]["until"], "2999-01-01", "{out:#}");
+    // Kept on its day, unchecked the day after.
+    let today = utc_day(0);
+    std::fs::write(
+        dir.join("truefit.toml"),
+        kept(&format!("kept_until = \"{today}\"\n")),
+    )
+    .unwrap();
+    let (code, out) = truefit_in(&dir, &["promise"]);
+    assert_eq!(code, Some(0), "{out:#}");
     std::fs::write(
         dir.join("truefit.toml"),
         kept("kept_until = \"2000-01-01\"\n"),
@@ -2024,6 +2033,8 @@ fn a_kept_promise_is_unchecked_once_a_path_it_waits_for_appears() {
     );
     std::fs::create_dir_all(dir.join("App/RollMind/People")).unwrap();
     std::fs::write(dir.join("App/README.md"), "").unwrap();
+    std::fs::create_dir_all(dir.join("App/.build")).unwrap();
+    std::fs::write(dir.join("App/.build/Gen.swift"), "").unwrap();
     let (code, out) = truefit_in(&dir, &["promise"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["promises"][0]["status"], "kept");
@@ -2091,6 +2102,15 @@ fn a_kept_promise_is_unchecked_once_its_issue_closes_and_kept_while_it_cannot_be
     assert!(why(&out).contains("rollmind#80 is closed"), "{out:#}");
 }
 
+/// The UTC date `ago` days before today, as YYYY-MM-DD.
+fn utc_day(ago: u32) -> String {
+    let out = Command::new("date")
+        .args(["-u", &format!("-v-{ago}d"), "+%F"])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
 /// Makes `dir` a git repo whose one commit, of all its files, is dated `date` (YYYY-MM-DD).
 fn commit_on(dir: &Path, date: &str) {
     let at = format!("{date}T12:00:00Z");
@@ -2116,12 +2136,7 @@ fn a_bare_kept_is_warned_for_14_days_after_its_line_changed_then_unchecked() {
     // Changed today: kept, warned, with the end to give it.
     let dir = config("kept-bare-new", &kept(""));
     let _ = std::fs::remove_dir_all(dir.join(".git"));
-    let today = Command::new("date")
-        .args(["-u", "+%F"])
-        .output()
-        .unwrap()
-        .stdout;
-    commit_on(&dir, String::from_utf8(today).unwrap().trim());
+    commit_on(&dir, &utc_day(0));
     let (code, out) = truefit_in(&dir, &["promise"]);
     assert_eq!(code, Some(0), "{out:#}");
     let p = &out["promises"][0];
@@ -2157,6 +2172,15 @@ fn a_bare_kept_is_warned_for_14_days_after_its_line_changed_then_unchecked() {
     );
     assert!(p["suggest"].is_string(), "{out:#}");
 
+    // The grace's last day is kept; the day after is not.
+    for (ago, code) in [(14, Some(0)), (15, Some(1))] {
+        let dir = config(&format!("kept-bare-{ago}"), &kept(""));
+        let _ = std::fs::remove_dir_all(dir.join(".git"));
+        commit_on(&dir, &utc_day(ago));
+        let (got, out) = truefit_in(&dir, &["promise"]);
+        assert_eq!(got, code, "{ago} days ago: {out:#}");
+    }
+
     // Kept forever, with its reason: no end is asked.
     std::fs::write(dir.join("truefit.toml"), kept("kept_forever = true\n")).unwrap();
     let (code, out) = truefit_in(&dir, &["promise"]);
@@ -2181,6 +2205,16 @@ fn a_kept_end_is_declared_rightly_or_exits_2() {
         ),
         ("kept = \"k\"\nkept_until = \"soon\"\n", "is no date"),
         ("kept = \"k\"\nkept_until_issue = \"80\"\n", "is no issue"),
+        (
+            "kept = \"k\"\nkept_until_issue = \"rollmind#x\"\n",
+            "is no issue",
+        ),
+        ("kept_while_absent = [\"App\"]\n", "an end of `kept`"),
+        ("kept_until_issue = \"rollmind#80\"\n", "an end of `kept`"),
+        (
+            "kept = \"k\"\nkept_forever = true\nkept_while_absent = [\"App\"]\n",
+            "both",
+        ),
         (
             "kept = \"k\"\nkept_while_absent = [\"\"]\n",
             "an empty path",
