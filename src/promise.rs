@@ -50,13 +50,10 @@ pub struct Promise {
     source: String,
     #[serde(default)]
     check: Vec<String>,
-    #[serde(default)]
     pub kept: Option<toml::Spanned<String>>,
-    #[serde(default)]
     pub kept_until: Option<String>,
     #[serde(default)]
     pub kept_while_absent: Vec<String>,
-    #[serde(default)]
     pub kept_until_issue: Option<String>,
     #[serde(default)]
     pub kept_forever: bool,
@@ -174,11 +171,7 @@ fn status<'p>(root: &Path, config: &Config, p: &'p Promise) -> (Value, Vec<(&'p 
     let mut report = json!({"name": p.name, "says": p.says, "source": p.source, "check": p.check});
     let mut models = Vec::new();
     let (status, why) = if let Some(kept) = &p.kept {
-        let (status, why, extra) = crate::kept::judge(root, p, kept.get_ref());
-        for (k, v) in extra {
-            report[k] = v;
-        }
-        (status, why)
+        crate::kept::judge(root, p, kept.get_ref(), &mut report)
     } else if p.check.is_empty() {
         ("unchecked", "no check keeps it, and it is not kept".into())
     } else if p.concurrent()

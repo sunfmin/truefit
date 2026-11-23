@@ -6,7 +6,7 @@
 
 use crate::contract::{self, CONFIG, fault};
 use crate::promise::Promise;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::path::Path;
 
 /// How long a `kept` with no end is warned before it is `unchecked`.
@@ -18,8 +18,7 @@ const ENDS: &str = "kept_until = \"<YYYY-MM-DD>\", kept_while_absent = [\"<a pat
 pub fn faults(p: &Promise) -> Vec<Value> {
     let n = &p.name;
     let mut faults = Vec::new();
-    let has_end =
-        p.kept_until.is_some() || !p.kept_while_absent.is_empty() || p.kept_until_issue.is_some();
+    let has_end = has_end(p);
     match &p.kept {
         None if has_end || p.kept_forever => faults.push(fault(
             format!("promise `{n}`: an end of `kept` with no `kept`"),
@@ -61,74 +60,66 @@ pub fn faults(p: &Promise) -> Vec<Value> {
 }
 
 /// A kept promise's status, `kept` or `unchecked` (its end passed, or it has
-/// none past its grace), its `why`, and what else the report says of it:
-/// `until`, `note`, `warning`, `suggest`.
-pub fn judge(root: &Path, p: &Promise, reason: &str) -> (&'static str, String, Map<String, Value>) {
+/// none past its grace), and its `why`; what else it says of it (`until`,
+/// `note`, `warning`, `suggest`) it writes in its `report`.
+pub fn judge(root: &Path, p: &Promise, reason: &str, report: &mut Value) -> (&'static str, String) {
     let today = contract::days(&contract::today()).unwrap_or(0);
-    let mut extra = Map::new();
     let ended = |end: String| format!("its `kept` ended: {end}; it was kept because: {reason}");
     if let Some(d) = &p.kept_until {
         if today > contract::days(d).unwrap_or(0) {
             return (
                 "unchecked",
                 ended(format!("kept until {d}, which has passed")),
-                extra,
             );
         }
-        extra.insert("until".into(), d.as_str().into());
+        report["until"] = d.as_str().into();
     }
     for glob in &p.kept_while_absent {
         if let Some(f) = crate::next::expand(root, glob).first() {
-            return ("unchecked", ended(format!("{f} exists (`{glob}`)")), extra);
+            return ("unchecked", ended(format!("{f} exists (`{glob}`)")));
         }
     }
     if let Some(i) = &p.kept_until_issue {
         match closed(root, i) {
-            Ok(true) => return ("unchecked", ended(format!("{i} is closed")), extra),
+            Ok(true) => return ("unchecked", ended(format!("{i} is closed"))),
             Ok(false) => {}
-            Err(e) => {
-                extra.insert(
-                    "note".into(),
-                    format!("{e}: whether {i} is closed is not read").into(),
-                );
-            }
+            Err(e) => report["note"] = format!("{e}: whether {i} is closed is not read").into(),
         }
     }
-    let bare = p.kept_until.is_none()
-        && p.kept_while_absent.is_empty()
-        && p.kept_until_issue.is_none()
-        && !p.kept_forever;
-    if !bare {
-        return ("kept", reason.into(), extra);
+    if has_end(p) || p.kept_forever {
+        return ("kept", reason.into());
     }
-    let suggest = |day: u64| format!("kept_until = \"{}\"", contract::civil(day));
-    match p.kept.as_ref().and_then(|k| changed(root, k.span())) {
-        None => {
-            extra.insert("suggest".into(), suggest(today + GRACE_DAYS).into());
-            let why = format!(
+    let changed = p.kept.as_ref().and_then(|k| changed(root, k.span()));
+    // The grace's last day, while it lasts.
+    let grace = changed
+        .map(|day| day + GRACE_DAYS)
+        .filter(|last| today <= *last);
+    let until = contract::civil(grace.unwrap_or(today + GRACE_DAYS));
+    report["suggest"] = format!("kept_until = \"{until}\"").into();
+    match (changed, grace) {
+        (None, _) => (
+            "unchecked",
+            format!(
                 "kept with no end, and no git history dates its `kept` line in {CONFIG}, so no grace can be counted: give it its check, or an end ({ENDS}); it was kept because: {reason}"
-            );
-            ("unchecked", why, extra)
-        }
-        Some(day) if today > day + GRACE_DAYS => {
-            extra.insert("suggest".into(), suggest(today + GRACE_DAYS).into());
-            let why = format!(
+            ),
+        ),
+        (Some(day), None) => (
+            "unchecked",
+            format!(
                 "kept with no end, and its line last changed on {}, over {GRACE_DAYS} days ago: give it its check, or an end that still holds ({ENDS}); it was kept because: {reason}",
                 contract::civil(day)
-            );
-            ("unchecked", why, extra)
-        }
-        Some(day) => {
-            extra.insert("suggest".into(), suggest(day + GRACE_DAYS).into());
-            let warning = format!(
-                "kept with no end: from {} ({GRACE_DAYS} days after its line last changed, {}) it is reported unchecked: give it the end its reason names, `suggest`'s or another ({ENDS})",
-                contract::civil(day + GRACE_DAYS + 1),
-                contract::civil(day)
-            );
-            extra.insert("warning".into(), warning.into());
-            ("kept", reason.into(), extra)
+            ),
+        ),
+        (Some(day), Some(last)) => {
+            report["warning"] = format!("kept with no end: from {} ({GRACE_DAYS} days after its line last changed, {}) it is reported unchecked: give it the end its reason names, `suggest`'s or another ({ENDS})", contract::civil(last + 1), contract::civil(day)).into();
+            ("kept", reason.into())
         }
     }
+}
+
+/// Whether a promise names an end of its `kept`.
+fn has_end(p: &Promise) -> bool {
+    p.kept_until.is_some() || !p.kept_while_absent.is_empty() || p.kept_until_issue.is_some()
 }
 
 /// `<checkout>#<n>` as its parts.
