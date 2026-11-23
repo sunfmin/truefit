@@ -165,13 +165,17 @@ fn differing(s: &Standin, run: Value) -> Value {
 }
 
 /// The files `glob` names under `root`, relative to it and sorted: `*` and
-/// `?` match within one path part; a directory named stands for its files.
+/// `?` match within one path part, `**` any directories (none too); a
+/// directory named stands for its files.
 pub fn expand(root: &Path, glob: &str) -> Vec<String> {
     let mut paths = vec![String::new()];
     for part in glob.split('/').filter(|p| !p.is_empty() && *p != ".") {
         paths = paths
             .iter()
             .flat_map(|at| {
+                if part == "**" {
+                    return below(root, at);
+                }
                 let names = if part.contains(['*', '?']) {
                     entries(&root.join(at))
                         .into_iter()
@@ -181,7 +185,7 @@ pub fn expand(root: &Path, glob: &str) -> Vec<String> {
                 } else {
                     vec![part.to_string()]
                 };
-                names.into_iter().map(move |n| join(at, &n))
+                names.into_iter().map(|n| join(at, &n)).collect()
             })
             .collect();
     }
@@ -197,6 +201,18 @@ pub fn expand(root: &Path, glob: &str) -> Vec<String> {
     files.sort();
     files.dedup();
     files
+}
+
+/// `at` and every directory under it, but those named with a dot.
+fn below(root: &Path, at: &str) -> Vec<String> {
+    let mut dirs = vec![at.to_string()];
+    for n in entries(&root.join(at)) {
+        let p = join(at, &n);
+        if !n.starts_with('.') && root.join(&p).is_dir() {
+            dirs.extend(below(root, &p));
+        }
+    }
+    dirs
 }
 
 fn join(at: &str, name: &str) -> String {

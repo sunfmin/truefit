@@ -50,6 +50,7 @@ name = "only-the-tap-signs"
 says = "the signing identity and the notary key live only in sunfmin/homebrew-tap, and only its `release` workflow signs."
 source = "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:23"
 kept = "where secrets live and which repo has a release workflow is the repos' setup, not something a run of truefit or its cut does; release.sh signs nothing and takes no secret, which a change to it shows in review"
+kept_forever = true
 
 [[promise]]
 name = "cut-needs-only-gh"

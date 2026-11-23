@@ -3,6 +3,7 @@
 
 mod contract;
 mod history;
+mod kept;
 mod model;
 mod next;
 mod promise;

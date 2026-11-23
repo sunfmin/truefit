@@ -623,7 +623,7 @@ pub fn today() -> String {
 }
 
 /// The proleptic Gregorian date `days` after 1970-01-01 (Howard Hinnant's algorithm).
-fn civil(days: u64) -> String {
+pub fn civil(days: u64) -> String {
     let z = days + 719_468;
     let (era, doe) = (z / 146_097, z % 146_097);
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
