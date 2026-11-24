@@ -1,8 +1,11 @@
 //! truefit: keeps a system's tests and models true to the real system.
 //! `truefit --help` is the manual, and its only copy.
 
+mod config;
 mod contract;
+mod date;
 mod history;
+mod host;
 mod kept;
 mod model;
 mod next;
@@ -17,6 +20,11 @@ use std::process::ExitCode;
 mod version;
 
 const MANUAL: &str = include_str!("manual.md");
+
+/// A refusal, as every command answers it: what is wrong, and the command or edit that fixes it.
+pub fn fault(fault: impl Into<String>, fix: impl Into<String>) -> serde_json::Value {
+    json!({"fault": fault.into(), "fix": fix.into()})
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -38,7 +46,7 @@ fn main() -> ExitCode {
         let marks = match rest {
             [] => Ok(&[][..]),
             ["--mark", pairs @ ..] if !pairs.is_empty() && pairs.len() % 2 == 0 => Ok(pairs),
-            _ => Err(vec![contract::fault(
+            _ => Err(vec![fault(
                 format!(
                     "`truefit promise {}` is not a promise command",
                     rest.join(" ")
@@ -53,7 +61,7 @@ fn main() -> ExitCode {
         let all = match rest {
             [] => Ok(false),
             ["--all"] => Ok(true),
-            _ => Err(vec![contract::fault(
+            _ => Err(vec![fault(
                 format!("`truefit next {}` is not a next command", rest.join(" ")),
                 "run `truefit next` or `truefit next --all`",
             )]),
@@ -90,7 +98,7 @@ fn contract(rest: &[&str]) -> ExitCode {
         [] => Ok(None),
         ["--real"] => Ok(Some(None)),
         ["--real", name] => Ok(Some(Some(*name))),
-        _ => Err(vec![contract::fault(
+        _ => Err(vec![fault(
             format!(
                 "`truefit contract {}` is not a contract command",
                 rest.join(" ")
@@ -115,7 +123,7 @@ fn sim(rest: &[&str]) -> ExitCode {
         _ => None,
     }
     .ok_or_else(|| {
-        vec![contract::fault(
+        vec![fault(
             format!("`truefit sim {}` is not a sim command", rest.join(" ")),
             "run `truefit sim [--seeds N | --budget <seconds>]`, `truefit sim --seed <s>` or `truefit sim --forget <s> --why <reason>`",
         )]
@@ -134,7 +142,7 @@ fn model(rest: &[&str]) -> ExitCode {
         _ => None,
     }
     .ok_or_else(|| {
-        vec![contract::fault(
+        vec![fault(
             format!("`truefit model {}` is not a model command", rest.join(" ")),
             "run `truefit model [<name>]` or `truefit model [<name>] --trace <file>`",
         )]

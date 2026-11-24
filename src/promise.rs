@@ -3,7 +3,10 @@
 //! sentences in the system's docs that read as promises are candidates, marked
 //! by the agent until each is registered or marked `not`.
 
-use crate::contract::{self, CONFIG, Config, fault};
+use crate::config::{self, CONFIG, Config};
+use crate::contract;
+use crate::fault;
+use crate::host;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -122,7 +125,7 @@ pub fn faults(config: &Config) -> Vec<Value> {
 
 /// `truefit promise [--mark <hash> <promise|not> ... [--why <reason>]]`.
 pub fn run(root: &Path, marks: &[&str], why: Option<&str>) -> Result<(Value, bool), Vec<Value>> {
-    let config = contract::load(root)?;
+    let config = config::load(root)?;
     let found = sentences(root, &config);
     if !marks.is_empty() {
         let owed = crate::history::found(root, &config).0;
@@ -243,7 +246,7 @@ pub fn same_name(a: &str, b: &str) -> bool {
 /// Of the candidates `found`, those no mark and no registered promise
 /// answers, and those marked `promise` that none registers.
 fn candidates(root: &Path, config: &Config, found: &[Value]) -> (Vec<Value>, Vec<Value>) {
-    let marks = contract::read(root, MARKS);
+    let marks = host::read(root, MARKS);
     let says: Vec<String> = config.promise.iter().map(|p| plain(&p.says)).collect();
     let (mut unmarked, mut unregistered) = (Vec::new(), Vec::new());
     for c in found {
@@ -424,7 +427,7 @@ fn mark(
     pairs: &[&str],
     why: Option<&str>,
 ) -> Result<(), Vec<Value>> {
-    let mut marks = contract::read(root, MARKS);
+    let mut marks = host::read(root, MARKS);
     if !marks.is_object() {
         marks = json!({});
     }
@@ -461,7 +464,7 @@ fn mark(
     if !faults.is_empty() {
         return Err(faults);
     }
-    contract::save(root, MARKS, &marks)
+    host::save(root, MARKS, &marks)
 }
 
 /// The `unregistered-promise`, `unchecked-promise`, `unreached-promise` and

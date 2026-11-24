@@ -1,0 +1,27 @@
+{
+  "tree": "09ad07391eefc0ab6cb768c820adfac7cb78e07b+d1fba762150c532c",
+  "picker": "codex:01a20e88-a20a-7f53-9f07-e0e1f02e018c:default",
+  "author": "claude-code:e63c2f36-1f45-5a0a-bd23-5d473ccb83cb:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/history.rs:49:5: replace titles -> BTreeMap<String, String> with BTreeMap::new()",
+        "why": "History tests can exercise the fix-count threshold without checking whether landed issue titles make it into the report.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/next.rs:140:5: replace without_faults -> Option<Value> with None",
+        "why": "Stand-in discovery and freshness tests can pass while next silently drops tasks for stand-ins that declare no fault cases.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:885:5: replace tasks -> (Vec<Value>, Vec<String>) with (vec![], vec![])",
+        "why": "Model checks can still pass while next misses changes to files since the commit recorded by the last model check.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}

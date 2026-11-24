@@ -1,32 +1,17 @@
 //! `truefit contract`: each declared stand-in and its real program answer the
 //! same cases alike.
 
+use crate::config::{CONFIG, load};
+use crate::fault;
+use crate::host::{find, read, scratch, write};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
-pub const CONFIG: &str = "truefit.toml";
 const PARTS: [&str; 4] = ["exit", "stdout", "stderr", "files"];
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Config {
-    #[serde(default)]
-    pub contract: Settings,
-    #[serde(default)]
-    pub standin: Vec<Standin>,
-    #[serde(default)]
-    pub sim: Option<crate::sim::Sim>,
-    #[serde(default)]
-    pub model: Vec<crate::model::Model>,
-    #[serde(default)]
-    pub promises: crate::promise::Sources,
-    #[serde(default)]
-    pub promise: Vec<crate::promise::Promise>,
-}
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
 #[derive(Deserialize)]
@@ -133,10 +118,6 @@ struct Answer {
     files: BTreeMap<String, Option<String>>,
 }
 
-pub fn fault(fault: impl Into<String>, fix: impl Into<String>) -> Value {
-    json!({"fault": fault.into(), "fix": fix.into()})
-}
-
 /// Runs the contracts declared in `root/truefit.toml`: against the stand-ins
 /// alone, or with `real` against the stand-ins and their real programs.
 /// Answers the report and whether every stand-in passed; `Err` is the faults.
@@ -203,30 +184,12 @@ pub fn run(root: &Path, real: Option<Option<&str>>) -> Result<(Value, bool), Vec
     ))
 }
 
-pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
-    let text = std::fs::read_to_string(root.join(CONFIG)).map_err(|e| {
-        vec![fault(
-            format!("cannot read {CONFIG} in {}: {e}", root.display()),
-            format!("run truefit where {CONFIG} is, or write one (`truefit --help`)"),
-        )]
-    })?;
-    let config: Config = toml::from_str(&text).map_err(|e| {
-        vec![fault(
-            format!("{CONFIG}: {}", e.message()),
-            format!("correct {CONFIG} as `truefit --help` declares it"),
-        )]
-    })?;
-    let mut faults = crate::model::faults(&config.model);
-    faults.extend(crate::promise::faults(&config));
-    if config.sim.as_ref().is_some_and(|s| s.run.is_empty()) {
-        faults.push(fault(
-            "[sim] run is empty",
-            "declare the command that runs the simulation from a seed, e.g. run = [\"tests/sim\"]",
-        ));
-    }
-    for (i, s) in config.standin.iter().enumerate() {
+/// What is wrong in the declared stand-ins: each fault with its fix.
+pub fn faults(standins: &[Standin]) -> Vec<Value> {
+    let mut faults = Vec::new();
+    for (i, s) in standins.iter().enumerate() {
         let n = &s.name;
-        if config.standin[..i].iter().any(|t| &t.name == n) {
+        if standins[..i].iter().any(|t| &t.name == n) {
             faults.push(fault(
                 format!("stand-in `{n}` is declared twice"),
                 "give each [[standin]] its own name",
@@ -288,11 +251,7 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
             ));
         }
     }
-    if faults.is_empty() {
-        Ok(config)
-    } else {
-        Err(faults)
-    }
+    faults
 }
 
 fn check_standin(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> Value {
@@ -375,7 +334,7 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
         report["needs"] = unrun.join("; ").into();
         ok = false;
     }
-    let record = json!({"date": today(), "version": version(root, s)});
+    let record = json!({"date": crate::date::today(), "version": version(root, s)});
     // The last real run's differing cases, kept until a real run finds none.
     let differ = differ_file(&s.name);
     let mut written = if differing.is_empty() {
@@ -433,23 +392,6 @@ pub fn differ_file(name: &str) -> String {
     format!(".truefit/{name}.differ.json")
 }
 
-/// Writes `value` to `root/file`, or the fault that it cannot.
-pub fn save(root: &Path, file: &str, value: &Value) -> Result<(), Vec<Value>> {
-    write(root, file, value).map_err(|e| {
-        vec![fault(
-            format!("cannot write {file}: {e}"),
-            "make .truefit/ a directory truefit can write",
-        )]
-    })
-}
-
-/// Writes `value` to `root/file`, making the directories it is in.
-pub fn write(root: &Path, file: &str, value: &Value) -> std::io::Result<()> {
-    let path = root.join(file);
-    std::fs::create_dir_all(path.parent().unwrap_or(root))?;
-    std::fs::write(root.join(file), format!("{value:#}\n"))
-}
-
 /// The first line its `version` command prints here, or None: none declared, or it cannot run.
 pub fn version(root: &Path, s: &Standin) -> Option<String> {
     (!s.version.is_empty())
@@ -476,36 +418,6 @@ fn differ(compare: &[String], a: &Answer, b: &Answer) -> Vec<String> {
         })
         .cloned()
         .collect()
-}
-
-/// What `git <args>` prints, run in `root`, or None: it failed.
-pub fn git(root: &Path, args: &[&str]) -> Option<String> {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-}
-
-pub fn read(root: &Path, file: &str) -> Value {
-    std::fs::read_to_string(root.join(file))
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or(Value::Null)
-}
-
-/// Where `program` is: relative to `root` when it names a path, else on PATH.
-pub fn find(root: &Path, program: &str) -> Option<PathBuf> {
-    if program.contains('/') {
-        let p = root.join(program);
-        return p.is_file().then_some(p);
-    }
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|d| d.join(program))
-        .find(|p| p.is_file())
 }
 
 /// Whether `argv` is empty or succeeds here: a real run (or one case of it) may go ahead.
@@ -588,18 +500,6 @@ fn normalise(text: &str, work: &Path, rules: &[(regex_lite::Regex, &str)]) -> St
     t
 }
 
-pub fn scratch() -> Result<PathBuf, String> {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static N: AtomicU32 = AtomicU32::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "truefit-{}-{}",
-        std::process::id(),
-        N.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
-    Ok(dir)
-}
-
 fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
@@ -614,66 +514,9 @@ fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Today's date in UTC, as YYYY-MM-DD.
-pub fn today() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    civil(secs / 86400)
-}
-
-/// The proleptic Gregorian date `days` after 1970-01-01 (Howard Hinnant's algorithm).
-pub fn civil(days: u64) -> String {
-    let z = days + 719_468;
-    let (era, doe) = (z / 146_097, z % 146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + u64::from(m <= 2);
-    format!("{y:04}-{m:02}-{d:02}")
-}
-
-/// The days from 1970-01-01 to a YYYY-MM-DD date, or None if it is not one: civil's inverse.
-pub fn days(date: &str) -> Option<u64> {
-    let mut parts = date.splitn(3, '-').map(|p| p.parse::<u64>().ok());
-    let (y, m, d) = (parts.next()??, parts.next()??, parts.next()??);
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || y < 1970 {
-        return None;
-    }
-    let y = if m <= 2 { y - 1 } else { y };
-    let (era, yoe) = (y / 400, y % 400);
-    let mp = if m > 2 { m - 3 } else { m + 9 };
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    (era * 146_097 + doe).checked_sub(719_468)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn civil_dates() {
-        assert_eq!(civil(0), "1970-01-01");
-        assert_eq!(civil(59), "1970-03-01");
-        assert_eq!(civil(11_016), "2000-02-29");
-        assert_eq!(civil(20_778), "2026-11-21");
-        for n in [0, 59, 11_016, 20_778] {
-            assert_eq!(days(&civil(n)), Some(n));
-        }
-        for bad in [
-            "",
-            "2026-13-01",
-            "2026-11",
-            "x-1-1",
-            "1969-12-31",
-            "2026-11-32",
-        ] {
-            assert_eq!(days(bad), None, "{bad}");
-        }
-    }
 
     #[test]
     fn normalise_replaces_the_case_dir_then_the_rules() {

@@ -2,7 +2,10 @@
 //! is kept in `.truefit/seeds/`, reruns first on every `truefit sim`, and a
 //! rerun whose steps differ is the simulation's nondeterminism.
 
-use crate::contract::{self, CONFIG, fault};
+use crate::config::{self, CONFIG};
+use crate::date;
+use crate::fault;
+use crate::host;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -50,7 +53,7 @@ pub enum New {
 }
 
 pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
-    let config = contract::load(root)?;
+    let config = config::load(root)?;
     let seed = match &ask {
         Ask::Seed(s) | Ask::Forget(s, _) => Some(s),
         Ask::Run(_) => None,
@@ -115,8 +118,8 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
         .map(|(n, (seeds, seed))| (n, json!({"seeds": seeds, "seed": seed})))
         .collect();
     let record =
-        json!({"date": contract::today(), "seeds": kept_reports as u64 + ran, "reached": reached});
-    contract::save(root, REACHED, &record)?;
+        json!({"date": date::today(), "seeds": kept_reports as u64 + ran, "reached": reached});
+    host::save(root, REACHED, &record)?;
     let next = advice(&reports);
     let ok = reports.iter().all(|r| r["result"] == "passes");
     let failing = reports.split_off(kept_reports);
@@ -143,7 +146,7 @@ impl Run {
 }
 
 fn once(root: &Path, sim: &Sim, seed: &str) -> Result<Run, Vec<Value>> {
-    let program = contract::find(root, &sim.run[0]).ok_or_else(|| {
+    let program = host::find(root, &sim.run[0]).ok_or_else(|| {
         vec![fault(
             format!("the simulation `{}` is not found", sim.run[0]),
             format!("correct [sim] run in {CONFIG}: a path relative to it, or a program on PATH"),
@@ -199,7 +202,7 @@ fn fresh(root: &Path, sim: &Sim, seed: &str, a: Run) -> Result<Value, Vec<Value>
     let b = once(root, sim, seed)?;
     let record = json!({
         "seed": seed,
-        "found": contract::today(),
+        "found": date::today(),
         "verdict": verdict,
         "last": verdict,
         "nondeterministic": difference(&a.lines, &b.lines),
@@ -382,13 +385,13 @@ fn note(reach: &mut Reach, seed: &str, lines: &[Value]) {
 
 /// Why the last `truefit sim` did not reach invariant `name`, or None: it did.
 pub fn unreached(root: &Path, name: &str, fresh_days: u64) -> Option<String> {
-    let r = contract::read(root, REACHED);
+    let r = host::read(root, REACHED);
     let Some(date) = r["date"].as_str() else {
         return Some(format!("sim: no `truefit sim` run is recorded ({REACHED})"));
     };
-    let age = contract::days(&contract::today())
+    let age = date::days(&date::today())
         .unwrap_or(0)
-        .saturating_sub(contract::days(date).unwrap_or(0));
+        .saturating_sub(date::days(date).unwrap_or(0));
     if age > fresh_days {
         return Some(format!(
             "sim: the last `truefit sim` ran {age} days ago, on {date}: over fresh_days ({fresh_days})"
@@ -423,7 +426,7 @@ fn file(seed: &str) -> String {
 }
 
 fn kept(root: &Path, seed: &str) -> Option<Value> {
-    Some(contract::read(root, &file(seed))).filter(|k| !k.is_null())
+    Some(host::read(root, &file(seed))).filter(|k| !k.is_null())
 }
 
 /// Every kept seed, by name; a file in .truefit/seeds/ that is no record is none.
@@ -438,7 +441,7 @@ pub fn all_kept(root: &Path) -> Vec<(String, Value)> {
 }
 
 fn write(root: &Path, seed: &str, record: &Value) -> Result<(), Vec<Value>> {
-    contract::save(root, &file(seed), record)
+    host::save(root, &file(seed), record)
 }
 
 fn entropy() -> u64 {

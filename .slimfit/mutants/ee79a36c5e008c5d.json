@@ -1,0 +1,33 @@
+{
+  "tree": "52c9fe871782199abf9d87b5b42961d455f5200a+d1fba762150c532c",
+  "picker": "codex:01a20e84-09bf-7160-b2c6-aece46885ef5:default",
+  "author": "claude-code:e63c2f36-1f45-5a0a-bd23-5d473ccb83cb:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/main.rs:47:39: replace match guard !pairs.is_empty() && pairs.len() % 2 == 0 with true in main",
+        "why": "Valid mark pairs still work, so the test suite needs a bare --mark or an odd argument count to catch the missing guard.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/contract.rs:191:49: replace == with != in faults",
+        "why": "A single stand-in never reaches the comparison, so single-stand-in fixtures could miss reversed duplicate detection.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/next.rs:101:5: replace stale -> Option<Value> with None",
+        "why": "A test that checks only for a missing contract could pass while next silently drops tasks for expired real runs.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/sim.rs:388:5: replace unreached -> Option<String> with None",
+        "why": "A simulation can still run and report its results while a promise backed by stale or missing simulation evidence is incorrectly accepted.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}

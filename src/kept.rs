@@ -4,7 +4,10 @@
 //! with none of these is warned for `GRACE_DAYS` after its line last
 //! changed, then reported `unchecked`.
 
-use crate::contract::{self, CONFIG, fault};
+use crate::config::CONFIG;
+use crate::date;
+use crate::fault;
+use crate::host;
 use crate::promise::Promise;
 use serde_json::Value;
 use std::path::Path;
@@ -35,7 +38,7 @@ pub fn faults(p: &Promise) -> Vec<Value> {
         _ => {}
     }
     if let Some(d) = &p.kept_until
-        && contract::days(d).is_none()
+        && date::days(d).is_none()
     {
         faults.push(fault(
             format!("promise `{n}`: kept_until \"{d}\" is no date"),
@@ -63,10 +66,10 @@ pub fn faults(p: &Promise) -> Vec<Value> {
 /// none past its grace), and its `why`; what else it says of it (`until`,
 /// `note`, `warning`, `suggest`) it writes in its `report`.
 pub fn judge(root: &Path, p: &Promise, reason: &str, report: &mut Value) -> (&'static str, String) {
-    let today = contract::days(&contract::today()).unwrap_or(0);
+    let today = date::days(&date::today()).unwrap_or(0);
     let ended = |end: String| format!("its `kept` ended: {end}; it was kept because: {reason}");
     if let Some(d) = &p.kept_until {
-        if today > contract::days(d).unwrap_or(0) {
+        if today > date::days(d).unwrap_or(0) {
             return (
                 "unchecked",
                 ended(format!("kept until {d}, which has passed")),
@@ -94,7 +97,7 @@ pub fn judge(root: &Path, p: &Promise, reason: &str, report: &mut Value) -> (&'s
     let grace = changed
         .map(|day| day + GRACE_DAYS)
         .filter(|last| today <= *last);
-    let until = contract::civil(grace.unwrap_or(today + GRACE_DAYS));
+    let until = date::civil(grace.unwrap_or(today + GRACE_DAYS));
     report["suggest"] = format!("kept_until = \"{until}\"").into();
     match (changed, grace) {
         (None, _) => (
@@ -107,11 +110,11 @@ pub fn judge(root: &Path, p: &Promise, reason: &str, report: &mut Value) -> (&'s
             "unchecked",
             format!(
                 "kept with no end, and its line last changed on {}, over {GRACE_DAYS} days ago: give it its check, or an end that still holds ({ENDS}); it was kept because: {reason}",
-                contract::civil(day)
+                date::civil(day)
             ),
         ),
         (Some(day), Some(last)) => {
-            report["warning"] = format!("kept with no end: from {} ({GRACE_DAYS} days after its line last changed, {}) it is reported unchecked: give it the end its reason names, `suggest`'s or another ({ENDS})", contract::civil(last + 1), contract::civil(day)).into();
+            report["warning"] = format!("kept with no end: from {} ({GRACE_DAYS} days after its line last changed, {}) it is reported unchecked: give it the end its reason names, `suggest`'s or another ({ENDS})", date::civil(last + 1), date::civil(day)).into();
             ("kept", reason.into())
         }
     }
@@ -137,7 +140,7 @@ fn issue(i: &str) -> Option<(&str, &str)> {
 /// Whether factorium's tracker says issue `i` is closed, or why it cannot tell.
 fn closed(root: &Path, i: &str) -> Result<bool, String> {
     let (checkout, n) = issue(i).unwrap_or((i, ""));
-    let program = contract::find(root, "factorium").ok_or("factorium is not on PATH")?;
+    let program = host::find(root, "factorium").ok_or("factorium is not on PATH")?;
     let shown: Value = std::process::Command::new(program)
         .args(["issue", "show", checkout, n])
         .current_dir(root)
@@ -159,7 +162,7 @@ fn changed(root: &Path, span: std::ops::Range<usize>) -> Option<u64> {
     let text = std::fs::read_to_string(root.join(CONFIG)).ok()?;
     let line = |at: usize| text.get(..at).map_or(1, |t| t.matches('\n').count() + 1);
     let lines = format!("{},{}", line(span.start), line(span.end));
-    let blame = contract::git(
+    let blame = host::git(
         root,
         &["blame", "--line-porcelain", "-L", &lines, "--", CONFIG],
     )?;

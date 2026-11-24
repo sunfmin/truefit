@@ -1,0 +1,39 @@
+{
+  "tree": "4fc76d391628d84314bf44041fa8a9f6b507cac2+d1fba762150c532c",
+  "picker": "codex:01a20e7e-3ea0-7931-b8d8-346aaf754e81:default",
+  "author": "claude-code:e63c2f36-1f45-5a0a-bd23-5d473ccb83cb:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/kept.rs:70:18: replace > with >= in judge",
+        "why": "A promise dated today would expire a day early, while past and future dates behave the same.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/date.rs:15:48: replace - with + in civil",
+        "why": "The correction only applies on the final day of a 400-year Gregorian cycle, which the shown date cases omit.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/kept.rs:98:51: replace + with - in judge",
+        "why": "The fallback would suggest a date in the past, which tests that only assert the verdict could miss.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/date.rs:8:16: replace / with % in today",
+        "why": "The shown conversion tests use fixed inputs and could all pass while today records the wrong UTC date.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:346:5: replace check_backed -> Result<Value, Vec<Value>> with Ok(Default::default())",
+        "why": "Tests that use stand-ins could miss a backed check that returns success without running TLC or writing a record.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}

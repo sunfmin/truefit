@@ -1617,8 +1617,18 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
             .unwrap()
             .contains("no candidate's hash")
     );
-    let (code, _) = truefit_in(&dir, &["promise", "--mark", &hash]);
-    assert_eq!(code, Some(2));
+    // A mark is a hash and its mark: one without the other is refused before any is read.
+    for marks in [&[][..], &[hash.as_str()]] {
+        let (code, out) = truefit_in(&dir, &[&["promise", "--mark"][..], marks].concat());
+        assert_eq!(code, Some(2), "{out:#}");
+        assert!(
+            out["error"][0]["fault"]
+                .as_str()
+                .unwrap()
+                .contains("is not a promise command"),
+            "{out:#}"
+        );
+    }
     let (_, out) = truefit_in(
         &dir,
         &["promise", "--mark", &hash, "not", "--why", "a description"],
@@ -2148,10 +2158,10 @@ fn a_kept_promise_is_unchecked_once_its_issue_closes_and_kept_while_it_cannot_be
     assert!(why(&out).contains("rollmind#80 is closed"), "{out:#}");
 }
 
-/// The UTC date `ago` days before today, as YYYY-MM-DD.
-fn utc_day(ago: u32) -> String {
+/// The UTC date `ago` days before today (after it, when negative), as YYYY-MM-DD.
+fn utc_day(ago: i32) -> String {
     let out = Command::new("date")
-        .args(["-u", &format!("-v-{ago}d"), "+%F"])
+        .args(["-u", &format!("-v{:+}d", -ago), "+%F"])
         .output()
         .unwrap();
     String::from_utf8(out.stdout).unwrap().trim().to_string()
@@ -2216,7 +2226,12 @@ fn a_bare_kept_is_warned_for_14_days_after_its_line_changed_then_unchecked() {
         why(&out).contains("not built yet: phase 3 adds the test"),
         "{out:#}"
     );
-    assert!(p["suggest"].is_string(), "{out:#}");
+    // Past its grace, the end it suggests is counted from today.
+    assert_eq!(
+        p["suggest"],
+        format!("kept_until = \"{}\"", utc_day(-14)),
+        "{out:#}"
+    );
 
     // The grace's last day is kept; the day after is not.
     for (ago, code) in [(14, Some(0)), (15, Some(1))] {
