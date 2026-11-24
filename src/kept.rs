@@ -5,9 +5,9 @@
 //! changed, then reported `unchecked`.
 
 use crate::config::CONFIG;
-use crate::contract;
 use crate::date;
 use crate::fault;
+use crate::host;
 use crate::promise::Promise;
 use serde_json::Value;
 use std::path::Path;
@@ -140,7 +140,7 @@ fn issue(i: &str) -> Option<(&str, &str)> {
 /// Whether factorium's tracker says issue `i` is closed, or why it cannot tell.
 fn closed(root: &Path, i: &str) -> Result<bool, String> {
     let (checkout, n) = issue(i).unwrap_or((i, ""));
-    let program = contract::find(root, "factorium").ok_or("factorium is not on PATH")?;
+    let program = host::find(root, "factorium").ok_or("factorium is not on PATH")?;
     let shown: Value = std::process::Command::new(program)
         .args(["issue", "show", checkout, n])
         .current_dir(root)
@@ -162,7 +162,7 @@ fn changed(root: &Path, span: std::ops::Range<usize>) -> Option<u64> {
     let text = std::fs::read_to_string(root.join(CONFIG)).ok()?;
     let line = |at: usize| text.get(..at).map_or(1, |t| t.matches('\n').count() + 1);
     let lines = format!("{},{}", line(span.start), line(span.end));
-    let blame = contract::git(
+    let blame = host::git(
         root,
         &["blame", "--line-porcelain", "-L", &lines, "--", CONFIG],
     )?;

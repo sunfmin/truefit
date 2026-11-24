@@ -3,7 +3,7 @@
 //! seed whose invariant no promise names (`failing-seed-promise`).
 
 use crate::config::{CONFIG, Config};
-use crate::contract;
+use crate::host;
 use crate::promise::{MARKS, has_any, hash, same_name};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,7 +15,7 @@ const FIX: &str = "fix, fixes, fixed, fixing, bug, bugs, race, races, racy, dupl
 /// The tasks the history owes that no `not` mark answers, and notes on
 /// what was not looked for.
 pub fn tasks(root: &Path, config: &Config) -> (Vec<Value>, Vec<String>) {
-    let marks = contract::read(root, MARKS);
+    let marks = host::read(root, MARKS);
     let (mut owed, notes) = found(root, config);
     owed.retain(|t| marks[t["evidence"]["hash"].as_str().unwrap_or("")]["mark"] != "not");
     (owed, notes)
@@ -47,7 +47,7 @@ fn issues(message: &str) -> Vec<String> {
 /// Each issue's title, as the subject that lands it gives it (`Land factum#30: <title>`).
 fn titles(root: &Path) -> BTreeMap<String, String> {
     let mut titles = BTreeMap::new();
-    for subject in contract::git(root, &["log", "--format=%s"])
+    for subject in host::git(root, &["log", "--format=%s"])
         .unwrap_or_default()
         .lines()
     {
@@ -89,10 +89,10 @@ fn covered(root: &Path, config: &Config) -> Vec<String> {
 
 /// The `fixed-often` tasks, or None outside a git repo.
 fn fixed_often(root: &Path, config: &Config) -> Option<Vec<Value>> {
-    contract::git(root, &["rev-parse", "--show-toplevel"])?;
+    host::git(root, &["rev-parse", "--show-toplevel"])?;
     let days = config.promises.history_days;
     let since = format!("--since={days}.days");
-    let log = contract::git(
+    let log = host::git(
         root,
         &[
             "log",

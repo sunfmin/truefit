@@ -5,6 +5,7 @@ mod config;
 mod contract;
 mod date;
 mod history;
+mod host;
 mod kept;
 mod model;
 mod next;

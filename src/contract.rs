@@ -3,11 +3,12 @@
 
 use crate::config::{CONFIG, load};
 use crate::fault;
+use crate::host::{find, read, scratch, write};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 const PARTS: [&str; 4] = ["exit", "stdout", "stderr", "files"];
@@ -391,23 +392,6 @@ pub fn differ_file(name: &str) -> String {
     format!(".truefit/{name}.differ.json")
 }
 
-/// Writes `value` to `root/file`, or the fault that it cannot.
-pub fn save(root: &Path, file: &str, value: &Value) -> Result<(), Vec<Value>> {
-    write(root, file, value).map_err(|e| {
-        vec![fault(
-            format!("cannot write {file}: {e}"),
-            "make .truefit/ a directory truefit can write",
-        )]
-    })
-}
-
-/// Writes `value` to `root/file`, making the directories it is in.
-pub fn write(root: &Path, file: &str, value: &Value) -> std::io::Result<()> {
-    let path = root.join(file);
-    std::fs::create_dir_all(path.parent().unwrap_or(root))?;
-    std::fs::write(root.join(file), format!("{value:#}\n"))
-}
-
 /// The first line its `version` command prints here, or None: none declared, or it cannot run.
 pub fn version(root: &Path, s: &Standin) -> Option<String> {
     (!s.version.is_empty())
@@ -434,36 +418,6 @@ fn differ(compare: &[String], a: &Answer, b: &Answer) -> Vec<String> {
         })
         .cloned()
         .collect()
-}
-
-/// What `git <args>` prints, run in `root`, or None: it failed.
-pub fn git(root: &Path, args: &[&str]) -> Option<String> {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-}
-
-pub fn read(root: &Path, file: &str) -> Value {
-    std::fs::read_to_string(root.join(file))
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or(Value::Null)
-}
-
-/// Where `program` is: relative to `root` when it names a path, else on PATH.
-pub fn find(root: &Path, program: &str) -> Option<PathBuf> {
-    if program.contains('/') {
-        let p = root.join(program);
-        return p.is_file().then_some(p);
-    }
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|d| d.join(program))
-        .find(|p| p.is_file())
 }
 
 /// Whether `argv` is empty or succeeds here: a real run (or one case of it) may go ahead.
@@ -544,18 +498,6 @@ fn normalise(text: &str, work: &Path, rules: &[(regex_lite::Regex, &str)]) -> St
         t = re.replace_all(&t, *with).into_owned();
     }
     t
-}
-
-pub fn scratch() -> Result<PathBuf, String> {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static N: AtomicU32 = AtomicU32::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "truefit-{}-{}",
-        std::process::id(),
-        N.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
-    Ok(dir)
 }
 
 fn copy(from: &Path, to: &Path) -> std::io::Result<()> {

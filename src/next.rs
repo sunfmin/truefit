@@ -5,6 +5,7 @@
 use crate::config::{self, CONFIG};
 use crate::contract::{self, Standin};
 use crate::date;
+use crate::host;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -22,7 +23,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
             let declared: Vec<PathBuf> = config
                 .standin
                 .iter()
-                .filter_map(|s| contract::find(root, &s.run[0])?.canonicalize().ok())
+                .filter_map(|s| host::find(root, &s.run[0])?.canonicalize().ok())
                 .collect();
             let mut found = Vec::new();
             for glob in globs {
@@ -40,7 +41,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     for s in &config.standin {
         tasks.extend(stale(root, s, today, config.contract.fresh_days));
         tasks.extend(without_faults(root, s));
-        let differ = contract::read(root, &contract::differ_file(&s.name));
+        let differ = host::read(root, &contract::differ_file(&s.name));
         if !differ.is_null() {
             tasks.push(differing(s, differ));
         }
@@ -99,7 +100,7 @@ fn no_contract(path: &str, glob: &str) -> Value {
 /// than `fresh_days`, or against another version than the one installed.
 fn stale(root: &Path, s: &Standin, today: u64, fresh_days: u64) -> Option<Value> {
     let file = contract::record_file(&s.name);
-    let record = contract::read(root, &file);
+    let record = host::read(root, &file);
     let installed = contract::version(root, s);
     let mut why = Vec::new();
     if record.is_null() {

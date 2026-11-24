@@ -2,9 +2,9 @@
 //! checked by TLC as a behaviour of one of them.
 
 use crate::config::{self, CONFIG};
-use crate::contract;
 use crate::date;
 use crate::fault;
+use crate::host;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -306,7 +306,7 @@ fn run_tlc(
 
 /// A fresh directory for one TLC run's files, outside the repo.
 fn workdir() -> Result<PathBuf, Vec<Value>> {
-    contract::scratch().map_err(|e| vec![fault(e, "free the temporary directory")])
+    host::scratch().map_err(|e| vec![fault(e, "free the temporary directory")])
 }
 
 fn paths(root: &Path, m: &Model) -> Result<(PathBuf, PathBuf), Vec<Value>> {
@@ -420,13 +420,13 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
             .collect()
     };
     let record = json!({
-        "commit": contract::git(root, &["rev-parse", "HEAD"]).map(|c| c.trim().to_string()),
+        "commit": host::git(root, &["rev-parse", "HEAD"]).map(|c| c.trim().to_string()),
         "date": date::today(),
         "inputs": inputs(root, m),
         "result": r["result"],
         "traces": {"accept": brief(&accepted), "reject": brief(&reject_reports)},
     });
-    contract::save(root, &record_file(&m.name), &record)?;
+    host::save(root, &record_file(&m.name), &record)?;
     Ok(r)
 }
 
@@ -468,7 +468,7 @@ fn inputs(root: &Path, m: &Model) -> String {
 pub fn unbacked(root: &Path, models: &[Model], model: &str, promise: &str) -> Option<String> {
     let m = models.iter().find(|m| m.name == model)?;
     let file = record_file(model);
-    let r = contract::read(root, &file);
+    let r = host::read(root, &file);
     let mut why = Vec::new();
     if r.is_null() {
         return Some(format!(
@@ -882,7 +882,7 @@ pub fn files<'a>(models: &'a [Model], name: &'a str) -> impl Iterator<Item = &'a
 /// The `stale-model` tasks: a model whose covered files changed since the
 /// commit its coverage record names; and notes on what was not compared.
 pub fn tasks(root: &Path, models: &[Model]) -> (Vec<Value>, Vec<String>) {
-    let git = |args: &[&str]| contract::git(root, args);
+    let git = |args: &[&str]| host::git(root, args);
     if models.is_empty() {
         return (vec![], vec![]);
     }
