@@ -93,6 +93,12 @@
     "sentence": "The manual is `truefit --help`, and it is the only copy.",
     "source": "README.md:11"
   },
+  "fa61f89820d9": {
+    "kind": "fixed-often",
+    "mark": "not",
+    "summary": "src/model.rs was changed by 3 fixes in 180 days, and no registered promise's check covers it",
+    "why": "No fix broke src/model.rs's behaviour: bbcadcb5 and 8c60820e (truefit#10) add and trim files() for history reading and reuse contract::git, cffef13d adds unreached() for the promise registry; feature additions and a refactor. 945c941c (truefit#18) only adds a test that a TLC run that cannot start is a fault naming java and its fix: it keeps not-run-never-passes (ADR 0001:23, a tie truefit cannot run is reported with what it needs, never passing), whose check is a test truefit cannot see."
+  },
   "ffcdeaf1d46d": {
     "mark": "not",
     "sentence": "First users, each tie's acceptance proven on one: contracts on factorium and sesame; simulation on factum, then factorium, then guild (guild#29); models on factum's exactly-once and factorium's heavy queue, then guild (guild#28).",
