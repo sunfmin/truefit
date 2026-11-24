@@ -1,0 +1,29 @@
+{
+  "tip": "fff306ef128fa540230dbc28e2b8a86bf096da2c",
+  "from": "a9cb63aff36e9927e57f094ffa85d4407dead88a",
+  "pool": 99,
+  "drawn": {
+    "rust": [
+      {
+        "name": "src/promise.rs:470:5: replace tasks -> Vec<Value> with vec![]",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/kept.rs:27:20: replace match guard has_end && p.kept_forever with false in faults",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:345:5: replace check_backed -> Result<Value, Vec<Value>> with Ok(Default::default())",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/kept.rs:127:5: replace issue -> Option<(&str, &str)> with None",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/promise.rs:378:12: replace + with * in cjk_end",
+        "outcome": "killed"
+      }
+    ]
+  }
+}
