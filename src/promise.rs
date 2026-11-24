@@ -582,21 +582,28 @@ mod tests {
     }
 
     #[test]
-    fn chinese_and_japanese_words_match_inside_a_sentence() {
-        assert!(has_any("所有模型 100% 本地运行。", WORDS));
-        assert!(has_any("仅在空闲时执行。", WORDS));
-        assert!(has_any("結果は必ず保存される。", WORDS));
-        assert!(!has_any("这是一张照片。", WORDS));
-        assert!(has_any("崩溃后重启，任务不会丢失。", CONCURRENT));
-        assert!(has_any("再試行しても一度だけ適用される。", CONCURRENT));
-        assert!(!has_any("仅在空闲时执行。", CONCURRENT));
-    }
-
-    #[test]
     fn words_match_whole_and_in_any_case() {
-        assert!(has_any("It is NEVER lost.", WORDS));
-        assert!(has_any("applied exactly-once", "exactly once"));
-        assert!(!has_any("Nevermore, everyone.", WORDS));
+        // (sentence, words, matches): English words match whole and in any
+        // case; Chinese and Japanese ones match inside a sentence.
+        let cases = [
+            ("It is NEVER lost.", WORDS, true),
+            ("applied exactly-once", "exactly once", true),
+            ("Nevermore, everyone.", WORDS, false),
+            ("所有模型 100% 本地运行。", WORDS, true),
+            ("仅在空闲时执行。", WORDS, true),
+            ("結果は必ず保存される。", WORDS, true),
+            ("这是一张照片。", WORDS, false),
+            ("崩溃后重启，任务不会丢失。", CONCURRENT, true),
+            ("再試行しても一度だけ適用される。", CONCURRENT, true),
+            ("仅在空闲时执行。", CONCURRENT, false),
+        ];
+        for (sentence, words, matches) in cases {
+            assert_eq!(
+                has_any(sentence, words),
+                matches,
+                "{sentence:?} should match: {matches}"
+            );
+        }
         assert!(same_name("applied-once", "AppliedOnce"));
         assert!(!same_name("applied-once", "AppliedTwice"));
     }

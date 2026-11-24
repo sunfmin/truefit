@@ -47,6 +47,12 @@
       "test": "truefit::cli::a_case_dir_is_copied_whole_and_one_missing_cannot_run",
       "hash": "34646b590547daea",
       "reason": "Its own truefit.toml (case dirs, a non-executable stand-in); merging configs shifts stand-in indices and the cannot-run test's next message."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::bin/truefit::promise::tests::words_match_whole_and_in_any_case",
+      "hash": "d2fe0b81496557d2",
+      "reason": "Its other_test is a CLI test of the binary that asserts nothing about has_any or same_name and cannot call these private functions; no assertion maps and the setups (pure calls vs a git repo and the binary) cannot fold together."
     }
   ],
   "kept_files": [
