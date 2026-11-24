@@ -1617,8 +1617,18 @@ fn promises_are_checked_and_reached_unreached_unchecked_or_kept() {
             .unwrap()
             .contains("no candidate's hash")
     );
-    let (code, _) = truefit_in(&dir, &["promise", "--mark", &hash]);
-    assert_eq!(code, Some(2));
+    // A mark is a hash and its mark: one without the other is refused before any is read.
+    for marks in [&[][..], &[hash.as_str()]] {
+        let (code, out) = truefit_in(&dir, &[&["promise", "--mark"][..], marks].concat());
+        assert_eq!(code, Some(2), "{out:#}");
+        assert!(
+            out["error"][0]["fault"]
+                .as_str()
+                .unwrap()
+                .contains("is not a promise command"),
+            "{out:#}"
+        );
+    }
     let (_, out) = truefit_in(
         &dir,
         &["promise", "--mark", &hash, "not", "--why", "a description"],
