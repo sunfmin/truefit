@@ -2,8 +2,10 @@
 //! is kept in `.truefit/seeds/`, reruns first on every `truefit sim`, and a
 //! rerun whose steps differ is the simulation's nondeterminism.
 
-use crate::contract::{self, CONFIG, fault};
+use crate::config::{self, CONFIG};
+use crate::contract;
 use crate::date;
+use crate::fault;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -51,7 +53,7 @@ pub enum New {
 }
 
 pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
-    let config = contract::load(root)?;
+    let config = config::load(root)?;
     let seed = match &ask {
         Ask::Seed(s) | Ask::Forget(s, _) => Some(s),
         Ask::Run(_) => None,

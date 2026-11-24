@@ -1,8 +1,10 @@
 //! `truefit model`: the repo's TLA+ models checked by TLC, and a run's records
 //! checked by TLC as a behaviour of one of them.
 
-use crate::contract::{self, CONFIG, fault};
+use crate::config::{self, CONFIG};
+use crate::contract;
 use crate::date;
+use crate::fault;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -98,7 +100,7 @@ pub fn run(
     name: Option<&str>,
     trace: Option<&str>,
 ) -> Result<(Value, bool), Vec<Value>> {
-    let models = contract::load(root)?.model;
+    let models = config::load(root)?.model;
     if models.is_empty() {
         return Err(vec![fault(
             format!("no [[model]] in {CONFIG}"),

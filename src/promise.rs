@@ -3,7 +3,9 @@
 //! sentences in the system's docs that read as promises are candidates, marked
 //! by the agent until each is registered or marked `not`.
 
-use crate::contract::{self, CONFIG, Config, fault};
+use crate::config::{self, CONFIG, Config};
+use crate::contract;
+use crate::fault;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -122,7 +124,7 @@ pub fn faults(config: &Config) -> Vec<Value> {
 
 /// `truefit promise [--mark <hash> <promise|not> ... [--why <reason>]]`.
 pub fn run(root: &Path, marks: &[&str], why: Option<&str>) -> Result<(Value, bool), Vec<Value>> {
-    let config = contract::load(root)?;
+    let config = config::load(root)?;
     let found = sentences(root, &config);
     if !marks.is_empty() {
         let owed = crate::history::found(root, &config).0;

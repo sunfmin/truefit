@@ -2,6 +2,7 @@
 //! evidence, steps and an accept command, in the shape of slimfit's `next`
 //! (factorium's `[idle]` files them as issues).
 
+use crate::config::{self, CONFIG};
 use crate::contract::{self, Standin};
 use crate::date;
 use serde_json::{Value, json};
@@ -9,13 +10,13 @@ use std::path::{Path, PathBuf};
 
 /// The tasks the ties in `root/truefit.toml` call for: the first, or `all`.
 pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
-    let config = contract::load(root)?;
+    let config = config::load(root)?;
     let mut notes = Vec::new();
     let mut tasks = Vec::new();
     match &config.contract.standins {
         None => notes.push(format!(
             "no `[contract] standins` in {}: stand-ins without a contract are not looked for; list where the repo's stand-ins live",
-            contract::CONFIG
+            CONFIG
         )),
         Some(globs) => {
             let declared: Vec<PathBuf> = config
@@ -87,9 +88,9 @@ fn no_contract(path: &str, glob: &str) -> Value {
     json!({
         "kind": "no-contract",
         "summary": format!("stand-in {path} has no contract"),
-        "files": [path, contract::CONFIG],
+        "files": [path, CONFIG],
         "evidence": {"standin": path, "found_by": glob},
-        "steps": format!("Read the system's code where it runs the real program `{path}` stands in for (not the stand-in), and declare a [[standin]] in {cfg} with run = [\"{path}\"] and that program as `real`: a case for each command line the system runs and each answer it tells apart (`truefit --help`, what a contract covers). Run `truefit contract` until every case runs, then the accept command where the real program runs; when its cases differ, make the stand-in answer as the real program does. Commit {cfg} and .truefit/.", cfg = contract::CONFIG),
+        "steps": format!("Read the system's code where it runs the real program `{path}` stands in for (not the stand-in), and declare a [[standin]] in {cfg} with run = [\"{path}\"] and that program as `real`: a case for each command line the system runs and each answer it tells apart (`truefit --help`, what a contract covers). Run `truefit contract` until every case runs, then the accept command where the real program runs; when its cases differ, make the stand-in answer as the real program does. Commit {cfg} and .truefit/.", cfg = CONFIG),
         "accept": format!("truefit contract --real {name}"),
     })
 }
@@ -140,9 +141,9 @@ fn without_faults(root: &Path, s: &Standin) -> Option<Value> {
     Some(json!({
         "kind": "standin-without-faults",
         "summary": format!("stand-in {}: {why}", s.name),
-        "files": [s.run[0], contract::CONFIG],
+        "files": [s.run[0], CONFIG],
         "evidence": {"standin": s.name, "run": s.run[0], "sha256": sha, "no_faults": kept.map(|k| json!({"why": k.why, "sha256": k.sha256})), "why": why},
-        "steps": format!("Read the system's code at each call to `{real}` (not the stand-in). For each call whose error the system handles, or drops, after an earlier step took effect (a token issued, a file written, a message sent), name that failure as a fault: add it to the [[standin]]'s `faults` in {cfg}, make the stand-in answer it when its `fault_env` (default TRUEFIT_FAULT) names it, and declare a [[standin.case]] with `fault` set whose real side fails as `{real}` does (an edit it refuses, an unreachable network; one it cannot be made to fail here gets `ready` and `needs`). Then write the system's test that runs that fault through the stand-in and checks what the system does after it. If no call can fail usefully, set no_faults = {{ why = \"<why>\", sha256 = \"<the evidence's sha256>\" }} on the [[standin]]: it is not asked again until the stand-in changes. Commit {cfg}, the stand-in and the test.", real = s.real[0], cfg = contract::CONFIG),
+        "steps": format!("Read the system's code at each call to `{real}` (not the stand-in). For each call whose error the system handles, or drops, after an earlier step took effect (a token issued, a file written, a message sent), name that failure as a fault: add it to the [[standin]]'s `faults` in {cfg}, make the stand-in answer it when its `fault_env` (default TRUEFIT_FAULT) names it, and declare a [[standin.case]] with `fault` set whose real side fails as `{real}` does (an edit it refuses, an unreachable network; one it cannot be made to fail here gets `ready` and `needs`). Then write the system's test that runs that fault through the stand-in and checks what the system does after it. If no call can fail usefully, set no_faults = {{ why = \"<why>\", sha256 = \"<the evidence's sha256>\" }} on the [[standin]]: it is not asked again until the stand-in changes. Commit {cfg}, the stand-in and the test.", real = s.real[0], cfg = CONFIG),
         "accept": format!("truefit contract --real {}", s.name),
     }))
 }

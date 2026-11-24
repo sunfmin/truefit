@@ -4,8 +4,10 @@
 //! with none of these is warned for `GRACE_DAYS` after its line last
 //! changed, then reported `unchecked`.
 
-use crate::contract::{self, CONFIG, fault};
+use crate::config::CONFIG;
+use crate::contract;
 use crate::date;
+use crate::fault;
 use crate::promise::Promise;
 use serde_json::Value;
 use std::path::Path;

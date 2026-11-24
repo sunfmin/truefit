@@ -2,7 +2,8 @@
 //! registered promise's check covers (`fixed-often`), and a kept failing
 //! seed whose invariant no promise names (`failing-seed-promise`).
 
-use crate::contract::{self, CONFIG, Config};
+use crate::config::{CONFIG, Config};
+use crate::contract;
 use crate::promise::{MARKS, has_any, hash, same_name};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};

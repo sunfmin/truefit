@@ -1,6 +1,8 @@
 //! `truefit contract`: each declared stand-in and its real program answer the
 //! same cases alike.
 
+use crate::config::{CONFIG, load};
+use crate::fault;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -8,25 +10,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub const CONFIG: &str = "truefit.toml";
 const PARTS: [&str; 4] = ["exit", "stdout", "stderr", "files"];
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Config {
-    #[serde(default)]
-    pub contract: Settings,
-    #[serde(default)]
-    pub standin: Vec<Standin>,
-    #[serde(default)]
-    pub sim: Option<crate::sim::Sim>,
-    #[serde(default)]
-    pub model: Vec<crate::model::Model>,
-    #[serde(default)]
-    pub promises: crate::promise::Sources,
-    #[serde(default)]
-    pub promise: Vec<crate::promise::Promise>,
-}
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
 #[derive(Deserialize)]
@@ -133,10 +117,6 @@ struct Answer {
     files: BTreeMap<String, Option<String>>,
 }
 
-pub fn fault(fault: impl Into<String>, fix: impl Into<String>) -> Value {
-    json!({"fault": fault.into(), "fix": fix.into()})
-}
-
 /// Runs the contracts declared in `root/truefit.toml`: against the stand-ins
 /// alone, or with `real` against the stand-ins and their real programs.
 /// Answers the report and whether every stand-in passed; `Err` is the faults.
@@ -203,30 +183,12 @@ pub fn run(root: &Path, real: Option<Option<&str>>) -> Result<(Value, bool), Vec
     ))
 }
 
-pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
-    let text = std::fs::read_to_string(root.join(CONFIG)).map_err(|e| {
-        vec![fault(
-            format!("cannot read {CONFIG} in {}: {e}", root.display()),
-            format!("run truefit where {CONFIG} is, or write one (`truefit --help`)"),
-        )]
-    })?;
-    let config: Config = toml::from_str(&text).map_err(|e| {
-        vec![fault(
-            format!("{CONFIG}: {}", e.message()),
-            format!("correct {CONFIG} as `truefit --help` declares it"),
-        )]
-    })?;
-    let mut faults = crate::model::faults(&config.model);
-    faults.extend(crate::promise::faults(&config));
-    if config.sim.as_ref().is_some_and(|s| s.run.is_empty()) {
-        faults.push(fault(
-            "[sim] run is empty",
-            "declare the command that runs the simulation from a seed, e.g. run = [\"tests/sim\"]",
-        ));
-    }
-    for (i, s) in config.standin.iter().enumerate() {
+/// What is wrong in the declared stand-ins: each fault with its fix.
+pub fn faults(standins: &[Standin]) -> Vec<Value> {
+    let mut faults = Vec::new();
+    for (i, s) in standins.iter().enumerate() {
         let n = &s.name;
-        if config.standin[..i].iter().any(|t| &t.name == n) {
+        if standins[..i].iter().any(|t| &t.name == n) {
             faults.push(fault(
                 format!("stand-in `{n}` is declared twice"),
                 "give each [[standin]] its own name",
@@ -288,11 +250,7 @@ pub fn load(root: &Path) -> Result<Config, Vec<Value>> {
             ));
         }
     }
-    if faults.is_empty() {
-        Ok(config)
-    } else {
-        Err(faults)
-    }
+    faults
 }
 
 fn check_standin(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> Value {
