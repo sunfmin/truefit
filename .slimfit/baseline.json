@@ -1,8 +1,8 @@
 {
   "suites": {
     "rust": {
-      "prod_lines": 3064,
-      "test_lines": 2436,
+      "prod_lines": 3069,
+      "test_lines": 2444,
       "tests": 63,
       "failures": 0,
       "test_seconds": 0.012,
@@ -59,21 +59,10 @@
       "reason": "Deep already: ~10 public items (Model, faults, run, unbacked, unreached, files, tasks, TRACES, TLC_VERSION, sha256) front ~900 lines of pinned TLC install, run under a limit, parallel accept/reject trace checks, generated trace modules and TLC output reading; callers (main, contract, promise, next, history) each use one or two. Tests cross the CLI against real TLC; unit tests only hit pure internal seams (TLC output, TLA+ values, config sections). Splitting TLC output/trace generation into modules would spread one concept, not deepen it. Removed one stale doc line."
     }
   ],
-  "kept_spans": [
-    {
-      "suite": "rust",
-      "file": "src/model.rs",
-      "start": 711,
-      "end": 715,
-      "function": "check_trace (closure)",
-      "hash": "63299962de7a9e30",
-      "reason": "Error path for writing TruefitTrace.tla/.cfg into the scratch dir contract::scratch() has just created; it fails only on a full disk or a dir removed underneath, which no fast test can bring about, and check_trace is reached only through TLC (a java process). Deleting it would turn an I/O error into a panic."
-    }
-  ],
   "measured": {
     "rust": {
       "uncovered_lines": 13,
-      "test_seconds": 39.72
+      "test_seconds": 37.522
     }
   }
 }
