@@ -1,0 +1,11 @@
+{
+  "tree": "a0f052761b9ae387c19525213bbcaf7bbed62491+d1fba762150c532c",
+  "picker": "codex:01a20e7c-415c-7fe1-8e9d-a0b54cf0893e:default",
+  "author": "claude-code:63eca984-f1d2-595a-9cb5-a248372a326a:opus",
+  "none": "The merged test preserves every removed assertion, including positive and negative Chinese and Japanese cases, so the change leaves no new coverage gap for these mutants to probe.",
+  "removed_tests": {
+    "rust": [
+      "src/promise.rs:585: chinese_and_japanese_words_match_inside_a_sentence"
+    ]
+  }
+}
