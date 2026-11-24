@@ -2,6 +2,7 @@
 //! `truefit --help` is the manual, and its only copy.
 
 mod contract;
+mod date;
 mod history;
 mod kept;
 mod model;

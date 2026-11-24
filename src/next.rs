@@ -3,6 +3,7 @@
 //! (factorium's `[idle]` files them as issues).
 
 use crate::contract::{self, Standin};
+use crate::date;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -34,7 +35,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
             }
         }
     }
-    let today = contract::days(&contract::today()).unwrap_or(0);
+    let today = date::days(&date::today()).unwrap_or(0);
     for s in &config.standin {
         tasks.extend(stale(root, s, today, config.contract.fresh_days));
         tasks.extend(without_faults(root, s));
@@ -104,7 +105,7 @@ fn stale(root: &Path, s: &Standin, today: u64, fresh_days: u64) -> Option<Value>
         why.push("no real run of it has passed".to_string());
     }
     if let Some(passed) = record["date"].as_str() {
-        let age = today.saturating_sub(contract::days(passed).unwrap_or(0));
+        let age = today.saturating_sub(date::days(passed).unwrap_or(0));
         if age > fresh_days {
             why.push(format!(
                 "its last real run passed {age} days ago, on {passed}: over fresh_days ({fresh_days})"

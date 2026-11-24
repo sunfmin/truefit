@@ -3,6 +3,7 @@
 //! rerun whose steps differ is the simulation's nondeterminism.
 
 use crate::contract::{self, CONFIG, fault};
+use crate::date;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -115,7 +116,7 @@ pub fn run(root: &Path, ask: Ask) -> Result<(Value, bool), Vec<Value>> {
         .map(|(n, (seeds, seed))| (n, json!({"seeds": seeds, "seed": seed})))
         .collect();
     let record =
-        json!({"date": contract::today(), "seeds": kept_reports as u64 + ran, "reached": reached});
+        json!({"date": date::today(), "seeds": kept_reports as u64 + ran, "reached": reached});
     contract::save(root, REACHED, &record)?;
     let next = advice(&reports);
     let ok = reports.iter().all(|r| r["result"] == "passes");
@@ -199,7 +200,7 @@ fn fresh(root: &Path, sim: &Sim, seed: &str, a: Run) -> Result<Value, Vec<Value>
     let b = once(root, sim, seed)?;
     let record = json!({
         "seed": seed,
-        "found": contract::today(),
+        "found": date::today(),
         "verdict": verdict,
         "last": verdict,
         "nondeterministic": difference(&a.lines, &b.lines),
@@ -386,9 +387,9 @@ pub fn unreached(root: &Path, name: &str, fresh_days: u64) -> Option<String> {
     let Some(date) = r["date"].as_str() else {
         return Some(format!("sim: no `truefit sim` run is recorded ({REACHED})"));
     };
-    let age = contract::days(&contract::today())
+    let age = date::days(&date::today())
         .unwrap_or(0)
-        .saturating_sub(contract::days(date).unwrap_or(0));
+        .saturating_sub(date::days(date).unwrap_or(0));
     if age > fresh_days {
         return Some(format!(
             "sim: the last `truefit sim` ran {age} days ago, on {date}: over fresh_days ({fresh_days})"

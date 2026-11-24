@@ -2,6 +2,7 @@
 //! checked by TLC as a behaviour of one of them.
 
 use crate::contract::{self, CONFIG, fault};
+use crate::date;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -418,7 +419,7 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
     };
     let record = json!({
         "commit": contract::git(root, &["rev-parse", "HEAD"]).map(|c| c.trim().to_string()),
-        "date": contract::today(),
+        "date": date::today(),
         "inputs": inputs(root, m),
         "result": r["result"],
         "traces": {"accept": brief(&accepted), "reject": brief(&reject_reports)},
