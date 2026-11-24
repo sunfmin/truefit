@@ -1029,7 +1029,37 @@ fn model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_
                 .unwrap()
                 .ends_with(".local/share/truefit/tlc/1.7.4/tla2tools.jar")
         );
+        // Its committed traces held: the accept trace allowed, the reject trace breaking AppliedOnce.
+        let traces = &queue["traces"];
+        assert_eq!(
+            traces["accept"][0]["file"],
+            ".truefit/traces/queue/accept/1.jsonl"
+        );
+        assert_eq!(traces["accept"][0]["result"], "allowed");
+        let reject = &traces["reject"][0];
+        assert_eq!(
+            (
+                &reject["result"],
+                &reject["step"],
+                &reject["breaks"],
+                &reject["breaks_at"]
+            ),
+            (
+                &"disallowed".into(),
+                &3.into(),
+                &"AppliedOnce".into(),
+                &3.into()
+            ),
+            "{out:#}"
+        );
     }
+    let record: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join(".truefit/models/queue.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(record["result"], "passes");
+    assert!(record["commit"].is_null(), "in no git repo: {record:#}");
+    assert_eq!(record["traces"]["reject"][0]["breaks"], "AppliedOnce");
     assert_eq!(
         std::fs::read_to_string(&planted).ok().as_deref(),
         Some("another run's module, half written"),
@@ -1166,38 +1196,8 @@ fn a_trace_the_model_allows_passes_and_one_it_does_not_names_its_first_disallowe
 
 #[test]
 fn a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks_the_promise() {
+    // Its passing run, the accept trace allowed and the reject trace breaking AppliedOnce: the at-once test.
     let dir = model_sample("backed", &[]);
-    let (code, out) = truefit_in(&dir, &["model"]);
-    assert_eq!(code, Some(0), "{out:#}");
-    let traces = &out["models"][0]["traces"];
-    assert_eq!(
-        traces["accept"][0]["file"],
-        ".truefit/traces/queue/accept/1.jsonl"
-    );
-    assert_eq!(traces["accept"][0]["result"], "allowed");
-    let reject = &traces["reject"][0];
-    assert_eq!(
-        (
-            &reject["result"],
-            &reject["step"],
-            &reject["breaks"],
-            &reject["breaks_at"]
-        ),
-        (
-            &"disallowed".into(),
-            &3.into(),
-            &"AppliedOnce".into(),
-            &3.into()
-        ),
-        "{out:#}"
-    );
-    let record: Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.join(".truefit/models/queue.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(record["result"], "passes");
-    assert!(record["commit"].is_null(), "in no git repo: {record:#}");
-    assert_eq!(record["traces"]["reject"][0]["breaks"], "AppliedOnce");
     let spec = std::fs::read_to_string(dir.join("Queue.tla")).unwrap();
     let fails = |changed: &str, naming: &str| {
         std::fs::write(dir.join("Queue.tla"), changed).unwrap();
