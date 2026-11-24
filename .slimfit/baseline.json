@@ -47,6 +47,14 @@
       "test": "truefit::cli::a_case_dir_is_copied_whole_and_one_missing_cannot_run",
       "hash": "34646b590547daea",
       "reason": "Its own truefit.toml (case dirs, a non-executable stand-in); merging configs shifts stand-in indices and the cannot-run test's next message."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks_the_promise",
+      "kind": "slow-test",
+      "hash": "fa8d12b552b7e5ce",
+      "seconds": 10.59,
+      "reason": "Four truefit model runs against real TLC (each a TLC check plus its traces' TLC runs), each a distinct case: a property too weak (reject trace breaks none), a guard too strict (accept trace disallowed, no reject fault), no reject trace (passes, unbacked), a reject trace breaking another invariant (TypeOK, unbacked). Its passing run moved into the at-once test, which already runs one; merging the rest would lose what each error names."
     }
   ],
   "kept_files": [
