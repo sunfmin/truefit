@@ -1,12 +1,12 @@
 {
   "suites": {
     "rust": {
-      "prod_lines": 3100,
-      "test_lines": 2453,
-      "tests": 63,
+      "prod_lines": 3064,
+      "test_lines": 2442,
+      "tests": 62,
       "failures": 0,
       "test_seconds": 0.012,
-      "covered_lines": 2441,
+      "covered_lines": 2436,
       "uncovered_lines": 0
     }
   },
@@ -47,6 +47,14 @@
       "test": "truefit::cli::a_case_dir_is_copied_whole_and_one_missing_cannot_run",
       "hash": "34646b590547daea",
       "reason": "Its own truefit.toml (case dirs, a non-executable stand-in); merging configs shifts stand-in indices and the cannot-run test's next message."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks_the_promise",
+      "kind": "slow-test",
+      "hash": "fa8d12b552b7e5ce",
+      "seconds": 10.59,
+      "reason": "Four truefit model runs against real TLC (each a TLC check plus its traces' TLC runs), each a distinct case: a property too weak (reject trace breaks none), a guard too strict (accept trace disallowed, no reject fault), no reject trace (passes, unbacked), a reject trace breaking another invariant (TypeOK, unbacked). Its passing run moved into the at-once test, which already runs one; merging the rest would lose what each error names."
     }
   ],
   "kept_files": [
@@ -59,10 +67,21 @@
       "reason": "Deep already: ~10 public items (Model, faults, run, unbacked, unreached, files, tasks, TRACES, TLC_VERSION, sha256) front ~900 lines of pinned TLC install, run under a limit, parallel accept/reject trace checks, generated trace modules and TLC output reading; callers (main, contract, promise, next, history) each use one or two. Tests cross the CLI against real TLC; unit tests only hit pure internal seams (TLC output, TLA+ values, config sections). Splitting TLC output/trace generation into modules would spread one concept, not deepen it. Removed one stale doc line."
     }
   ],
+  "kept_spans": [
+    {
+      "suite": "rust",
+      "file": "src/model.rs",
+      "start": 711,
+      "end": 715,
+      "function": "check_trace (closure)",
+      "hash": "63299962de7a9e30",
+      "reason": "Error path for writing TruefitTrace.tla/.cfg into the scratch dir contract::scratch() has just created; it fails only on a full disk or a dir removed underneath, which no fast test can bring about, and check_trace is reached only through TLC (a java process). Deleting it would turn an I/O error into a panic."
+    }
+  ],
   "measured": {
     "rust": {
       "uncovered_lines": 13,
-      "test_seconds": 37.761
+      "test_seconds": 38.588
     }
   }
 }
