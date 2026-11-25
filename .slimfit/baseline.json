@@ -55,6 +55,12 @@
       "hash": "fa8d12b552b7e5ce",
       "seconds": 10.59,
       "reason": "Four truefit model runs against real TLC (each a TLC check plus its traces' TLC runs), each a distinct case: a property too weak (reject trace breaks none), a guard too strict (accept trace disallowed, no reject fault), no reject trace (passes, unbacked), a reject trace breaking another invariant (TypeOK, unbacked). Its passing run moved into the at-once test, which already runs one; merging the rest would lose what each error names."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::bin/truefit::promise::tests::words_match_whole_and_in_any_case",
+      "hash": "37d98e422611b2ee",
+      "reason": "Its 10 has_any cases (whole-word English, any case, hyphen-joined words, CJK substring matches and non-matches) and 2 same_name asserts are checked by no other test; the other_test only runs this code on the way to a stale-model task and asserts none of these outcomes. A merge would fold a pure table into a git-repo integration test in another crate target, hiding which behaviour failed."
     }
   ],
   "kept_files": [
