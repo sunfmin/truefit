@@ -3,13 +3,33 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn truefit_in(dir: &Path, args: &[&str]) -> (Option<i32>, Value) {
-    let out = Command::new(env!("CARGO_BIN_EXE_truefit"))
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
+    answer(
+        Command::new(env!("CARGO_BIN_EXE_truefit"))
+            .args(args)
+            .current_dir(dir),
+    )
+}
+
+/// The exit code and stdout's JSON object (null if none) of `command`'s run.
+fn answer(command: &mut Command) -> (Option<i32>, Value) {
+    let out = command.output().unwrap();
     let json = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
     (out.status.code(), json)
+}
+
+/// JIT flags for the JVM of each TLC run in a test (JAVA_TOOL_OPTIONS): C1
+/// only, as TLC's answers do not depend on the JIT tier and a sample's run is
+/// over before C2's compiles pay off (half the CPU of each TLC run here).
+const C1_ONLY: &str = "-XX:TieredStopAtLevel=1";
+
+/// `truefit_in`, with each TLC run's JVM given `C1_ONLY`.
+fn truefit_c1_in(dir: &Path, args: &[&str]) -> (Option<i32>, Value) {
+    answer(
+        Command::new(env!("CARGO_BIN_EXE_truefit"))
+            .args(args)
+            .current_dir(dir)
+            .env("JAVA_TOOL_OPTIONS", C1_ONLY),
+    )
 }
 
 fn truefit(args: &[&str]) -> std::process::Output {
@@ -999,7 +1019,7 @@ fn model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_
                 .current_dir(&dir)
                 .env(
                     "JAVA_TOOL_OPTIONS",
-                    format!("-Djava.io.tmpdir={}", shared.display()),
+                    format!("{C1_ONLY} -Djava.io.tmpdir={}", shared.display()),
                 )
                 .stdout(std::process::Stdio::piped())
                 .spawn()
@@ -1072,7 +1092,7 @@ fn model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_
         spec.replace("IF head \\in done", "IF FALSE"),
     )
     .unwrap();
-    let (code, out) = truefit_in(&dir, &["model", "queue"]);
+    let (code, out) = truefit_c1_in(&dir, &["model", "queue"]);
     assert_eq!(code, Some(1), "{out:#}");
     let queue = &out["models"][0];
     assert_eq!(queue["result"], "fails");
@@ -1107,7 +1127,7 @@ fn model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_
         "---- MODULE Queue ----\nVARIABLE\n====\n",
     )
     .unwrap();
-    let (code, out) = truefit_in(&dir, &["model", "queue"]);
+    let (code, out) = truefit_c1_in(&dir, &["model", "queue"]);
     assert_eq!(code, Some(1), "{out:#}");
     let queue = &out["models"][0];
     assert_eq!(queue["result"], "broken", "{out:#}");
