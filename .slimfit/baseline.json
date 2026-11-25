@@ -71,6 +71,14 @@
       "commits_90d": 11,
       "commits_total": 11,
       "reason": "Deep already: ~10 public items (Model, faults, run, unbacked, unreached, files, tasks, TRACES, TLC_VERSION, sha256) front ~900 lines of pinned TLC install, run under a limit, parallel accept/reject trace checks, generated trace modules and TLC output reading; callers (main, contract, promise, next, history) each use one or two. Tests cross the CLI against real TLC; unit tests only hit pure internal seams (TLC output, TLA+ values, config sections). Splitting TLC output/trace generation into modules would spread one concept, not deepen it. Removed one stale doc line."
+    },
+    {
+      "suite": "rust",
+      "file": "src/contract.rs",
+      "prod_lines": 464,
+      "commits_90d": 17,
+      "commits_total": 17,
+      "reason": "Deep enough: callers see run (the whole contract check, real or stand-in only), faults (config validation), without_faults, version and the two record paths; behind them sit case dirs, process spawning, fault env, normalisation, comparison and the .truefit record/differ writes. Unit tests stay on internal seams (normalise, differ). The 90-day churn is features (faults, ready/needs, no_faults) plus truefit#32's move of config, host and date out of it; no pass-through or shallow piece is left to move."
     }
   ],
   "kept_spans": [
