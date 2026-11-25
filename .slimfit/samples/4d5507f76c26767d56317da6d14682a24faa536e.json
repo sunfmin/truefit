@@ -1,0 +1,29 @@
+{
+  "tip": "4d5507f76c26767d56317da6d14682a24faa536e",
+  "from": "fff306ef128fa540230dbc28e2b8a86bf096da2c",
+  "pool": 198,
+  "drawn": {
+    "rust": [
+      {
+        "name": "src/contract.rs:277:5: replace check_real -> Value with Default::default()",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/history.rs:18:5: replace tasks -> (Vec<Value>, Vec<String>) with (vec![Default::default()], vec![String::new()])",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/date.rs:33:19: replace > with == in days",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/date.rs:16:26: replace * with + in civil",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/date.rs:26:5: replace days -> Option<u64> with Some(1)",
+        "outcome": "killed"
+      }
+    ]
+  }
+}
