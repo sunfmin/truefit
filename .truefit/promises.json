@@ -40,6 +40,12 @@
     "summary": "src/contract.rs was changed by 2 fixes in 180 days, and no registered promise's check covers it",
     "why": "Neither commit fixes a broken behaviour in src/contract.rs: bbcadcb5 (truefit#10) adds a git() helper for history reading, cffef13d adds the [promises]/[[promise]] config fields and wires promise faults into load. Both are feature additions that touch the config loader; they keep no promise of their own."
   },
+  "5234f9e14dbe": {
+    "kind": "fixed-often",
+    "mark": "not",
+    "summary": "src/model.rs was changed by 3 fixes in 180 days, and no registered promise's check covers it",
+    "why": "src/model.rs's fixes keep no promise a model or sim can check: truefit#10 (bbcadcb5, 8c60820e) and cffef13d added features and refactored (files(), unreached(), KEYWORDS); truefit#18 (945c941c) only added a unit test that a TLC run that cannot start is the java fault with its fix, a test-level promise whose code truefit cannot see"
+  },
   "5a5831fbc313": {
     "mark": "not",
     "sentence": "guild#25: every guild test passed while a soft stop let Claude Code run its next tool call.",
