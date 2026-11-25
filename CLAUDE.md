@@ -8,13 +8,3 @@ What truefit is and is not: `docs/adr/0001-truefit-holds-the-ties-between-tests-
 
 - `./gate.sh`: fmt, clippy, then `slimfit check` (the tests, measured against `.slimfit/baseline.json`). Run it before `factorium worker done`.
 - slimfit's loop holds here as in any repo it is set up in (`slimfit --help`): a change that adds source lines carries its mutants record, picked by a second agent.
-
-## Agent skills
-
-### Issue tracker
-
-Issues live in factorium's local tracker (`factorium issue … truefit`). See `docs/agents/issue-tracker.md`.
-
-### Domain docs
-
-Single-context. See `docs/agents/domain.md`.
