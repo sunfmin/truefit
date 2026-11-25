@@ -23,14 +23,27 @@ cat >"$t/bin/lipo" <<'EOF'
 case "$1" in -archs) echo "x86_64 arm64" ;; -create) cp "$4" "$3" ;; esac
 EOF
 printf '#!/bin/sh\n' >"$t/bin/rustup"
-# gh: `workflow run` makes run <n+1>, which `run view` reports as $RUN_ENDS.
+# gh: `workflow run` makes run <n+1>, which `run view` reports as $RUN_ENDS
+# after failing with HTTP 500 as many times as $s.fails says. `run cancel`
+# is logged with whether origin still had the tag then.
 cat >"$t/bin/gh" <<'EOF'
 #!/bin/sh
 s=$FAKE_GH
 case "$1 $2" in
 "workflow run") echo "$*" >>"$s.calls"; echo $(( $(cat "$s.n") + 1 )) >"$s.n" ;;
 "run list") n=$(cat "$s.n"); [ "$n" = 0 ] || echo "$n" ;;
-"run view") case "$*" in *--log-failed*) echo "the run's failed log" ;; *) echo "$RUN_ENDS" ;; esac ;;
+"run cancel")
+    there=$(git ls-remote "$FAKE_ORIGIN" refs/tags/v1.2.3 | cut -f1)
+    echo "run cancel $3 tag:${there:+there}" >>"$s.calls" ;;
+"run view")
+    case "$*" in *--log-failed*) echo "the run's failed log"; exit 0 ;; esac
+    f=$(cat "$s.fails" 2>/dev/null || echo 0)
+    if [ "$f" -gt 0 ]; then
+        echo $((f - 1)) >"$s.fails"
+        echo "HTTP 500: Internal Server Error" >&2
+        exit 1
+    fi
+    echo "$RUN_ENDS" ;;
 esac
 EOF
 chmod +x "$t/bin/"*
@@ -42,7 +55,8 @@ git remote add origin "$t/origin.git"
 head=$(git rev-parse HEAD)
 
 run_cut() {
-    PATH="$t/bin:$PATH" FAKE_GH="$t/gh" RELEASE_WAIT_LIMIT=20 RUN_ENDS="$1" \
+    PATH="$t/bin:$PATH" FAKE_GH="$t/gh" FAKE_ORIGIN="$t/origin.git" RELEASE_POLL=0 \
+        RELEASE_WAIT_LIMIT="${LIMIT:-20}" RUN_ENDS="$1" \
         packaging/release.sh cut v1.2.3 >"$t/out" 2>&1
 }
 fail() { echo "release-test: $*" >&2; cat "$t/out" >&2; exit 1; }
@@ -58,6 +72,22 @@ grep -qx "workflow run release.yml -R sunfmin/homebrew-tap -f repo=truefit -f ta
 if run_cut "completed failure"; then fail "a run that fails passes the cut"; fi
 grep -q "the run's failed log" "$t/out" || fail "a failed run's log is not printed"
 [ -z "$(tagged)" ] || fail "the tag of a failed cut is still on origin"
+
+# A transient API error while the run is fine does not end the cut (truefit#35).
+echo 2 >"$t/gh.fails"
+run_cut "completed success" || fail "two HTTP 500s from gh run view fail the cut"
+[ "$(cat "$t/gh.fails")" = 0 ] || fail "the cut did not poll past the errors"
+[ -z "$(tagged)" ] || fail "the tag the cut pushed is still on origin"
+
+# The limit passes with the run queued: the run is cancelled while the tag is
+# still there, then the tag is taken away.
+: >"$t/gh.calls"
+if LIMIT=0 run_cut "queued "; then fail "a run still queued at the limit passes the cut"; fi
+grep -q "still 'queued '" "$t/out" || fail "the cut does not say the run is still queued"
+n=$(cat "$t/gh.n")
+grep -qx "run cancel $n tag:there" "$t/gh.calls" \
+    || fail "run $n was not cancelled before the tag went: '$(cat "$t/gh.calls")'"
+[ -z "$(tagged)" ] || fail "the tag of a timed-out cut is still on origin"
 
 # factorium's tag step, after the cut: it tags HEAD and pushes the tag. Then a
 # cut run again finds it there, and leaves it.
