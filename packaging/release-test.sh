@@ -2,8 +2,9 @@
 # Checks `release.sh cut` without building or publishing (gate.sh runs it):
 # cargo, lipo, rustup and gh are faked, origin is a bare repo here. The cut
 # dispatches the tap's workflow, waits for that run and fails with its log
-# when it fails; a tag it pushed is gone from origin when it ends, and a tag
-# origin already had on HEAD stays.
+# when it fails; a failing gh poll is tried again, a run unfinished when the
+# cut ends is cancelled before its tag goes; a tag it pushed is gone from
+# origin when it ends, and a tag origin already had on HEAD stays.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 t=$(mktemp -d)
@@ -73,7 +74,7 @@ if run_cut "completed failure"; then fail "a run that fails passes the cut"; fi
 grep -q "the run's failed log" "$t/out" || fail "a failed run's log is not printed"
 [ -z "$(tagged)" ] || fail "the tag of a failed cut is still on origin"
 
-# A transient API error while the run is fine does not end the cut (truefit#35).
+# A transient API error while the run is fine does not end the cut.
 echo 2 >"$t/gh.fails"
 run_cut "completed success" || fail "two HTTP 500s from gh run view fail the cut"
 [ "$(cat "$t/gh.fails")" = 0 ] || fail "the cut did not poll past the errors"
