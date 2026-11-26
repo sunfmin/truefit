@@ -1,0 +1,21 @@
+{
+  "tree": "bce6d8778b2e3adaa87bbbf1c1fa74a586431b7d+d1fba762150c532c",
+  "picker": "codex:01a2160a-d85d-7470-9e51-7752905f48c8:default",
+  "author": "claude-code:1ca9d6ed-1f7a-592b-9c47-caee2bddece1:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/contract.rs:428:30: replace match guard status.success() with true in ready",
+        "why": "The timeout test covers a hung command and a successful command, so a readiness command that exits nonzero may go unchecked.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/contract.rs:427:14: replace match guard argv.is_empty() with true in ready",
+        "why": "A configured readiness command that cannot be found or spawned would be treated as ready, a path the added test does not exercise.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}

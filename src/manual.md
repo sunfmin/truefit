@@ -46,6 +46,9 @@ Each declared stand-in and its real program answer the same cases alike.
   to produce on this host: an unreachable network) is `not run`, with its
   `needs`; the other cases still run, but the real run is `not run` and
   records nothing.
+- A `ready` or `version` command still running after `fact_limit` seconds is
+  killed with every process it started, and named as timed out: its `ready`
+  is not met (`not run`), its version unknown (`next` says so in `notes`).
 
 Run from the directory holding `truefit.toml`; command paths with a `/` in
 them are relative to it, others are looked up on PATH.
@@ -56,6 +59,7 @@ them are relative to it, others are looked up on PATH.
 [contract]
 standins = ["tests/fake-*", "tests/fakes"] # where the repo's stand-ins live
 fresh_days = 30                       # a passing real run older is stale (default 30)
+fact_limit = 10                       # seconds a `ready` or `version` command may take (default 10)
 
 [[standin]]
 name = "git"                          # what `--real <name>` names

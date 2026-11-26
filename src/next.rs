@@ -41,7 +41,22 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     let today = date::days(&date::today()).unwrap_or(0);
     for s in &config.standin {
         let (program, real) = s.programs(root, globs);
-        tasks.extend(stale(root, s, real, today, config.contract.fresh_days));
+        let installed =
+            contract::version(root, s, config.contract.fact_limit).unwrap_or_else(|e| {
+                notes.push(format!(
+                    "stand-in {}: {e}; its installed version is not compared",
+                    s.name
+                ));
+                None
+            });
+        tasks.extend(stale(
+            root,
+            s,
+            real,
+            installed,
+            today,
+            config.contract.fresh_days,
+        ));
         tasks.extend(without_faults(root, s, (&program, real)));
         let differ = host::read(root, &contract::differ_file(&s.name));
         if !differ.is_null() {
@@ -100,10 +115,16 @@ fn no_contract(path: &str, glob: &str) -> Value {
 
 /// A `stale-contract` task, if `s`'s last passing real run is missing, older
 /// than `fresh_days`, or against another version than the one installed.
-fn stale(root: &Path, s: &Standin, real: &str, today: u64, fresh_days: u64) -> Option<Value> {
+fn stale(
+    root: &Path,
+    s: &Standin,
+    real: &str,
+    installed: Option<String>,
+    today: u64,
+    fresh_days: u64,
+) -> Option<Value> {
     let file = contract::record_file(&s.name);
     let record = host::read(root, &file);
-    let installed = contract::version(root, s);
     let mut why = Vec::new();
     if record.is_null() {
         why.push("no real run of it has passed".to_string());
