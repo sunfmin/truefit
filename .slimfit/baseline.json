@@ -55,6 +55,12 @@
       "test": "truefit::bin/truefit::promise::tests::words_match_whole_and_in_any_case",
       "hash": "37d98e422611b2ee",
       "reason": "Its 10 has_any cases (whole-word English, any case, hyphen-joined words, CJK substring matches and non-matches) and 2 same_name asserts are checked by no other test; the other_test only runs this code on the way to a stale-model task and asserts none of these outcomes. A merge would fold a pure table into a git-repo integration test in another crate target, hiding which behaviour failed."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time",
+      "hash": "db16931f376eb1f1",
+      "reason": "Its assertions (at most the bound of JVMs alive at once, more than one at once, bound+4 runs, answers in trace order) have no counterpart in the other test, and they need a stand-in java on PATH that logs liveness; the other test checks the real pinned TLC (temp dir isolation, real states/depth, broken spec), so folding the stand-in in would change what it checks."
     }
   ],
   "kept_files": [
