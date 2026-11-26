@@ -1,0 +1,15 @@
+{
+  "tree": "966c869a8a0067346ac0ae80100cb5c729796d0c+d1fba762150c532c",
+  "picker": "codex:01a21612-de50-7221-aab3-ddc9e1cb5179:default",
+  "author": "claude-code:c9d49f25-7dd6-5d6f-bce8-239973855174:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/model.rs:329:49: replace * with / in run_tlc",
+        "why": "This makes runs under 50 seconds report zero elapsed time, which verdict and fault assertions could miss.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      }
+    ]
+  }
+}

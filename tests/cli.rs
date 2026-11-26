@@ -986,6 +986,9 @@ fn model_states_are_tlcs_distinct_states_under_symmetry() {
         (&"passes".into(), &2002.into(), &46.into()),
         "{out:#}"
     );
+    // Its time, to the hundredth of a second: a run under a second is not 0.
+    let seconds = counters["seconds"].as_f64().unwrap();
+    assert!(seconds > 0.0 && seconds < 60.0, "{out:#}");
 }
 
 /// truefit#15: TLC unpacks each standard module it reads into java.io.tmpdir
@@ -1590,6 +1593,11 @@ fn model_faults_exit_2() {
             config("model-zero", &model("m", &format!("{covers}limit = 0\n"))),
             vec!["model"],
             "limit of 0",
+        ),
+        (
+            config("model-no-heap", &model("m", &format!("{covers}heap = 0\n"))),
+            vec!["model"],
+            "heap of 0 MB",
         ),
         (plain.clone(), vec!["model", "other"], "no model `other`"),
         (
@@ -2415,4 +2423,193 @@ fn a_kept_end_is_declared_rightly_or_exits_2() {
             "{bad}: {out:#}"
         );
     }
+}
+
+#[test]
+fn a_stand_in_behind_a_wrapper_is_the_run_word_under_standins() {
+    let dir = config(
+        "wrapped",
+        r#"[contract]
+standins = ["tests/fake-*"]
+[[standin]]
+name = "x"
+run = ["tests/wrap", "tests/fake-x"]
+real = ["tests/wrap", "echo"]
+[[standin.case]]
+name = "c"
+args = ["hi"]
+"#,
+    );
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    let script = |name: &str, body: &str| {
+        let path = dir.join("tests").join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        Command::new("chmod").arg("+x").arg(&path).status().unwrap();
+    };
+    script("wrap", "exec \"$@\"");
+    script("fake-x", "echo wrong");
+    truefit_in(&dir, &["contract", "--real"]);
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(out["counts"].get("no-contract").is_none(), "{out:#}");
+    let tasks = out["tasks"].as_array().unwrap();
+    let kind = |k: &str| tasks.iter().find(|t| t["kind"] == k).unwrap().clone();
+    let differ = kind("differing-case");
+    assert_eq!(differ["files"][0], "tests/fake-x", "{differ:#}");
+    assert!(differ["steps"].as_str().unwrap().contains("`tests/fake-x`"));
+    // The real program is `real`'s word behind the same wrapper.
+    assert!(
+        differ["summary"]
+            .as_str()
+            .unwrap()
+            .contains("unlike `echo`")
+    );
+    let without = kind("standin-without-faults");
+    assert_eq!(without["files"][0], "tests/fake-x", "{without:#}");
+    assert_eq!(without["evidence"]["run"], "tests/fake-x");
+    let sha = without["evidence"]["sha256"].clone();
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let marked = toml.replace(
+        "real = [\"tests/wrap\", \"echo\"]\n",
+        &format!("real = [\"tests/wrap\", \"echo\"]\nno_faults = {{ why = \"never fails\", sha256 = {sha} }}\n"),
+    );
+    std::fs::write(dir.join("truefit.toml"), marked).unwrap();
+    let count = |dir: &Path| {
+        let (_, out) = truefit_in(dir, &["next", "--all"]);
+        out["counts"]["standin-without-faults"]
+            .as_u64()
+            .unwrap_or(0)
+    };
+    assert_eq!(count(&dir), 0);
+    // Changing the wrapper is not changing the stand-in; changing the stand-in is.
+    script("wrap", "# another wrapper\nexec \"$@\"");
+    assert_eq!(count(&dir), 0);
+    script("fake-x", "echo \"$@\"");
+    assert_eq!(count(&dir), 1);
+}
+
+#[test]
+fn a_stand_in_a_wrapper_runs_from_beside_itself_is_named_by_its_file_name() {
+    let dir = config(
+        "beside",
+        r#"[contract]
+standins = ["tests/fake-*"]
+[[standin]]
+name = "y"
+run = ["tests/wrap", "fake-y"]
+real = ["tests/wrap", "real-y"]
+[[standin.case]]
+name = "c"
+"#,
+    );
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    for name in ["wrap", "fake-y"] {
+        let path = dir.join("tests").join(name);
+        std::fs::write(&path, "#!/bin/sh\nexec \"$(dirname \"$0\")/$@\"\n").unwrap();
+        Command::new("chmod").arg("+x").arg(&path).status().unwrap();
+    }
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(out["counts"].get("no-contract").is_none(), "{out:#}");
+    let tasks = out["tasks"].as_array().unwrap();
+    let task = tasks
+        .iter()
+        .find(|t| t["kind"] == "standin-without-faults")
+        .unwrap();
+    assert_eq!(task["files"][0], "tests/fake-y");
+    assert!(task["steps"].as_str().unwrap().contains("`real-y`"));
+    // Behind another wrapper than the stand-in's, the real program is `real[0]`.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let other = toml.replace(
+        "[\"tests/wrap\", \"real-y\"]",
+        "[\"other-wrap\", \"real-y\"]",
+    );
+    std::fs::write(dir.join("truefit.toml"), other).unwrap();
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    let steps = out["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "standin-without-faults")
+        .unwrap()["steps"]
+        .clone();
+    assert!(steps.as_str().unwrap().contains("`other-wrap`"), "{steps}");
+}
+
+#[test]
+fn a_version_or_ready_command_past_fact_limit_is_killed_with_its_children_and_named() {
+    let dir = config(
+        "fact-limit",
+        r#"[contract]
+fact_limit = 1
+[[standin]]
+name = "hangs"
+run = ["/bin/echo"]
+real = ["echo"]
+ready = ["./hang", "ready"]
+[[standin.case]]
+name = "c"
+[[standin]]
+name = "echo"
+run = ["/bin/echo"]
+real = ["echo"]
+ready = ["true"]
+version = ["./hang", "version"]
+[[standin.case]]
+name = "c"
+"#,
+    );
+    // It starts a child that holds its stdout, and waits on it forever.
+    let hang = dir.join("hang");
+    std::fs::write(
+        &hang,
+        "#!/bin/sh\nsleep 600 &\necho $! > \"$1.pid\"\nwait\n",
+    )
+    .unwrap();
+    Command::new("chmod").arg("+x").arg(&hang).status().unwrap();
+    let gone = |which: &str| {
+        let pid = std::fs::read_to_string(dir.join(format!("{which}.pid"))).unwrap();
+        // A killed child is reaped by launchd soon after, not at once.
+        (0..50).any(|_| {
+            let alive = Command::new("kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            !alive
+        })
+    };
+    let start = std::time::Instant::now();
+    let (code, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(start.elapsed().as_secs_f64() < 2.0, "{:?}", start.elapsed());
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(
+        out["counts"]["stale-contract"], 2,
+        "the other stand-in is still read: {out:#}"
+    );
+    assert!(
+        out["notes"].as_array().unwrap().iter().any(|n| n
+            .as_str()
+            .unwrap()
+            .contains("stand-in echo: `./hang version` timed out after 1 s")),
+        "{out:#}"
+    );
+    assert!(gone("version"), "its child is left running");
+    let start = std::time::Instant::now();
+    let (code, out) = truefit_in(&dir, &["contract", "--real"]);
+    assert!(start.elapsed().as_secs_f64() < 3.0, "{:?}", start.elapsed());
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["standins"][0]["result"], "not run");
+    assert_eq!(
+        out["standins"][0]["why"],
+        "`./hang ready` timed out after 1 s"
+    );
+    assert!(gone("ready"), "its child is left running");
+    // A real run that passes still passes; its version is unknown, and why.
+    assert_eq!(out["standins"][1]["result"], "pass", "{out:#}");
+    assert!(out["standins"][1]["real_run"]["version"].is_null());
+    assert_eq!(
+        out["standins"][1]["version"],
+        "`./hang version` timed out after 1 s"
+    );
 }
