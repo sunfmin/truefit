@@ -1,0 +1,10 @@
+ignore = ["src/manual.md", "testdata/**"]
+
+# This repo's documents, each under its kind (`docfit check --help`).
+[documents]
+"CLAUDE.md" = "agent"
+"GLOSSARY.md" = "glossary"
+"README.md" = "readme"
+"docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md" = "adr"
+"docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md" = "adr"
+"docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md" = "adr"
