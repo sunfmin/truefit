@@ -1314,12 +1314,12 @@ fn a_trace_the_model_allows_passes_and_one_it_does_not_names_its_first_disallowe
 
 #[test]
 fn a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks_the_promise() {
-    // Its passing run, the accept trace allowed and the reject trace breaking AppliedOnce: the at-once test.
+    // Its passing run, the accept trace allowed and the reject trace breaking AppliedOnce: the at-once test. Its TLC runs C1 only.
     let dir = model_sample("backed", &[]);
     let spec = std::fs::read_to_string(dir.join("Queue.tla")).unwrap();
     let fails = |changed: &str, naming: &str| {
         std::fs::write(dir.join("Queue.tla"), changed).unwrap();
-        let (code, out) = truefit_in(&dir, &["model", "queue"]);
+        let (code, out) = truefit_c1_in(&dir, &["model", "queue"]);
         assert_eq!(code, Some(1), "{out:#}");
         let error = out["models"][0]["error"].as_str().unwrap();
         assert!(error.contains(naming), "{out:#}");
@@ -1356,7 +1356,7 @@ fn a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks
     std::fs::write(dir.join("Queue.tla"), &spec).unwrap();
     // Without a reject trace the model still passes; its promises are unbacked.
     std::fs::remove_dir_all(dir.join(".truefit/traces/queue/reject")).unwrap();
-    let (code, out) = truefit_in(&dir, &["model"]);
+    let (code, out) = truefit_c1_in(&dir, &["model"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["models"][0]["traces"]["reject"], serde_json::json!([]));
     assert!(why(&dir).contains("no reject trace it disallows that breaks `applied-once`"));
@@ -1368,7 +1368,7 @@ fn a_model_holds_its_committed_traces_an_accept_allowed_and_a_reject_that_breaks
         r#"{"step":1,"state":{"applied":[0,0,0],"next":9}}"#,
     )
     .unwrap();
-    let (code, out) = truefit_in(&dir, &["model"]);
+    let (code, out) = truefit_c1_in(&dir, &["model"]);
     assert_eq!(code, Some(0), "{out:#}");
     assert_eq!(out["models"][0]["traces"]["reject"][0]["breaks"], "TypeOK");
     assert!(why(&dir).contains("no reject trace it disallows that breaks `applied-once`"));
