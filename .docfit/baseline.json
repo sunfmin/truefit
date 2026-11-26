@@ -1,0 +1,38 @@
+{
+  "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md": {
+    "local_refs": 5,
+    "pointers": [
+      "e2e.sh"
+    ]
+  },
+  "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md": {
+    "bytes": 3611,
+    "local_refs": 2,
+    "paragraph": 670
+  },
+  "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md": {
+    "local_refs": 3,
+    "pointers": [
+      ".github/workflows/README.md",
+      "ADR 0013"
+    ]
+  },
+  "rust-toolchain.toml": {
+    "local_refs": 1
+  },
+  "src/history.rs": {
+    "local_refs": 2
+  },
+  "src/kept.rs": {
+    "local_refs": 1
+  },
+  "src/model.rs": {
+    "local_refs": 1
+  },
+  "tests/cli.rs": {
+    "local_refs": 8
+  },
+  "truefit.toml": {
+    "local_refs": 1
+  }
+}

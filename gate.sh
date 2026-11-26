@@ -7,6 +7,8 @@ cargo fmt --all --check
 cargo clippy --all-targets --quiet -- -D warnings
 # The tests, measured against .slimfit/baseline.json (in place of cargo test).
 slimfit check
+# The documents, each in its home and budget, against .docfit/baseline.json.
+docfit check
 # The release script, as far as it goes without publishing.
 sh -n packaging/release.sh
 for good in v0.1.0 v1.22.333; do packaging/release.sh check-tag "$good"; done

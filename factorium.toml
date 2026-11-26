@@ -5,6 +5,7 @@ fast = "./gate.sh"
 fast_limit = 600
 slow = "./gate.sh"
 slow_limit = 600
+regenerated = [".docfit/baseline.json"]
 
 # A cut (ADR 0003): packaging/release.sh builds the tag's version, pushes the
 # tag and runs the tap sunfmin/homebrew-tap's release workflow, which signs,
@@ -17,8 +18,9 @@ limit = 2700
 
 # slimfit's tasks and a sample of landed changes' mutants, then truefit's own
 # (`truefit next --all`, built from the base's tip: the truefit being checked
-# reads its own ties), filed as issues while the host is idle (SPEC §1.16).
+# reads its own ties), then docfit's document debt, filed as issues while the
+# host is idle (SPEC §1.16).
 [idle]
-tasks = "slimfit --version && slimfit next --all --sample 5 && PATH=$HOME/.cargo/bin:$PATH cargo run --quiet --release -- next --all"
+tasks = "slimfit --version && docfit --version && slimfit next --all --sample 5 && PATH=$HOME/.cargo/bin:$PATH cargo run --quiet --release -- next --all && docfit next --all"
 every = 86400
 limit = 1800
