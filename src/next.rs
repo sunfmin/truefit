@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 /// The tasks the ties in `root/truefit.toml` call for: the first, or `all`.
 pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     let config = config::load(root)?;
+    let globs = config.contract.standins.as_deref().unwrap_or_default();
     let mut notes = Vec::new();
     let mut tasks = Vec::new();
     match &config.contract.standins {
@@ -23,7 +24,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
             let declared: Vec<PathBuf> = config
                 .standin
                 .iter()
-                .filter_map(|s| host::find(root, &s.run[0])?.canonicalize().ok())
+                .filter_map(|s| host::find(root, &s.programs(root, globs).0)?.canonicalize().ok())
                 .collect();
             let mut found = Vec::new();
             for glob in globs {
@@ -39,6 +40,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     }
     let today = date::days(&date::today()).unwrap_or(0);
     for s in &config.standin {
+        let (program, real) = s.programs(root, globs);
         let installed =
             contract::version(root, s, config.contract.fact_limit).unwrap_or_else(|e| {
                 notes.push(format!(
@@ -47,11 +49,18 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
                 ));
                 None
             });
-        tasks.extend(stale(root, s, installed, today, config.contract.fresh_days));
-        tasks.extend(without_faults(root, s));
+        tasks.extend(stale(
+            root,
+            s,
+            real,
+            installed,
+            today,
+            config.contract.fresh_days,
+        ));
+        tasks.extend(without_faults(root, s, (&program, real)));
         let differ = host::read(root, &contract::differ_file(&s.name));
         if !differ.is_null() {
-            tasks.push(differing(s, differ));
+            tasks.push(differing(s, (&program, real), differ));
         }
     }
     tasks.extend(crate::sim::tasks(root));
@@ -109,6 +118,7 @@ fn no_contract(path: &str, glob: &str) -> Value {
 fn stale(
     root: &Path,
     s: &Standin,
+    real: &str,
     installed: Option<String>,
     today: u64,
     fresh_days: u64,
@@ -142,27 +152,27 @@ fn stale(
         "summary": format!("stand-in {}: {}", s.name, why.join("; ")),
         "files": [file],
         "evidence": {"standin": s.name, "real_run": record, "installed": installed, "fresh_days": fresh_days, "why": why},
-        "steps": format!("Run the accept command where `{0}` runs. When every case agrees, commit {file}: the contract is fresh. When a case differs, make the stand-in answer as `{0}` does (the differing case's answers are printed), never the case or a normalise rule to hide what the system reads, and run it again. When it is not run, give it what it `needs` here.", s.real[0]),
+        "steps": format!("Run the accept command where `{0}` runs. When every case agrees, commit {file}: the contract is fresh. When a case differs, make the stand-in answer as `{0}` does (the differing case's answers are printed), never the case or a normalise rule to hide what the system reads, and run it again. When it is not run, give it what it `needs` here.", real),
         "accept": format!("truefit contract --real {}", s.name),
     }))
 }
 
 /// A `standin-without-faults` task, if `s` declares no fault and no
 /// `no_faults` kept for the stand-in as it is now.
-fn without_faults(root: &Path, s: &Standin) -> Option<Value> {
-    let (why, sha) = contract::without_faults(root, s)?;
+fn without_faults(root: &Path, s: &Standin, (program, real): (&str, &str)) -> Option<Value> {
+    let (why, sha) = contract::without_faults(root, s, program)?;
     let kept = s.no_faults.as_ref();
     Some(json!({
         "kind": "standin-without-faults",
         "summary": format!("stand-in {}: {why}", s.name),
-        "files": [s.run[0], CONFIG],
-        "evidence": {"standin": s.name, "run": s.run[0], "sha256": sha, "no_faults": kept.map(|k| json!({"why": k.why, "sha256": k.sha256})), "why": why},
-        "steps": format!("Read the system's code at each call to `{real}` (not the stand-in). For each call whose error the system handles, or drops, after an earlier step took effect (a token issued, a file written, a message sent), name that failure as a fault: add it to the [[standin]]'s `faults` in {cfg}, make the stand-in answer it when its `fault_env` (default TRUEFIT_FAULT) names it, and declare a [[standin.case]] with `fault` set whose real side fails as `{real}` does (an edit it refuses, an unreachable network; one it cannot be made to fail here gets `ready` and `needs`). Then write the system's test that runs that fault through the stand-in and checks what the system does after it. If no call can fail usefully, set no_faults = {{ why = \"<why>\", sha256 = \"<the evidence's sha256>\" }} on the [[standin]]: it is not asked again until the stand-in changes. Commit {cfg}, the stand-in and the test.", real = s.real[0], cfg = CONFIG),
+        "files": [program, CONFIG],
+        "evidence": {"standin": s.name, "run": program, "sha256": sha, "no_faults": kept.map(|k| json!({"why": k.why, "sha256": k.sha256})), "why": why},
+        "steps": format!("Read the system's code at each call to `{real}` (not the stand-in). For each call whose error the system handles, or drops, after an earlier step took effect (a token issued, a file written, a message sent), name that failure as a fault: add it to the [[standin]]'s `faults` in {cfg}, make the stand-in answer it when its `fault_env` (default TRUEFIT_FAULT) names it, and declare a [[standin.case]] with `fault` set whose real side fails as `{real}` does (an edit it refuses, an unreachable network; one it cannot be made to fail here gets `ready` and `needs`). Then write the system's test that runs that fault through the stand-in and checks what the system does after it. If no call can fail usefully, set no_faults = {{ why = \"<why>\", sha256 = \"<the evidence's sha256>\" }} on the [[standin]]: it is not asked again until the stand-in changes. Commit {cfg}, the stand-in and the test.", cfg = CONFIG),
         "accept": format!("truefit contract --real {}", s.name),
     }))
 }
 
-fn differing(s: &Standin, run: Value) -> Value {
+fn differing(s: &Standin, (program, real): (&str, &str), run: Value) -> Value {
     let file = contract::differ_file(&s.name);
     let cases: Vec<&str> = run["cases"]
         .as_array()
@@ -172,10 +182,10 @@ fn differing(s: &Standin, run: Value) -> Value {
         .collect();
     json!({
         "kind": "differing-case",
-        "summary": format!("stand-in {} answers unlike `{}` in {}", s.name, s.real[0], cases.join(", ")),
-        "files": [s.run[0], file],
+        "summary": format!("stand-in {} answers unlike `{}` in {}", s.name, real, cases.join(", ")),
+        "files": [program, file],
         "evidence": {"standin": s.name, "real_run": run},
-        "steps": format!("For each case in the evidence, read which parts `differ` and both answers (`standin`, `real`). Fix the stand-in `{}` so it answers as `{}` does: the real program is right. Do not change the case, and add a normalise rule only for what differs from run to run (dates, paths, ids), never for what the system reads. Run the accept command; when every case agrees it removes {file}: commit .truefit/.", s.run[0], s.real[0]),
+        "steps": format!("For each case in the evidence, read which parts `differ` and both answers (`standin`, `real`). Fix the stand-in `{}` so it answers as `{}` does: the real program is right. Do not change the case, and add a normalise rule only for what differs from run to run (dates, paths, ids), never for what the system reads. Run the accept command; when every case agrees it removes {file}: commit .truefit/.", program, real),
         "accept": format!("truefit contract --real {}", s.name),
     })
 }
