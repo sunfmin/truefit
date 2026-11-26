@@ -199,7 +199,10 @@ fn status<'p>(root: &Path, config: &Config, p: &'p Promise) -> (Value, Vec<(&'p 
                     .standin
                     .iter()
                     .find(|s| s.name == arg)
-                    .and_then(|s| contract::without_faults(root, s))
+                    .and_then(|s| {
+                        let globs = config.contract.standins.as_deref().unwrap_or_default();
+                        contract::without_faults(root, s, &s.programs(root, globs).0)
+                    })
                     .map(|(why, _)| format!("`contract {arg}`: stand-in {arg}: {why}")),
                 _ => None,
             })
