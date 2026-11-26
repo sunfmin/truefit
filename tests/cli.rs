@@ -986,6 +986,9 @@ fn model_states_are_tlcs_distinct_states_under_symmetry() {
         (&"passes".into(), &2002.into(), &46.into()),
         "{out:#}"
     );
+    // Its time, to the hundredth of a second: a run under a second is not 0.
+    let seconds = counters["seconds"].as_f64().unwrap();
+    assert!(seconds > 0.0 && seconds < 60.0, "{out:#}");
 }
 
 /// truefit#15: TLC unpacks each standard module it reads into java.io.tmpdir
