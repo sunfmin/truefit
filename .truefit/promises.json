@@ -57,6 +57,12 @@
     "sentence": "A cut needs only `gh` logged in as a user who may push truefit and dispatch the tap's workflow; no tap token on the host.",
     "source": "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md:48"
   },
+  "79775d38b98a": {
+    "kind": "fixed-often",
+    "mark": "not",
+    "summary": "src/model.rs was changed by 3 fixes in 180 days, and no registered promise's check covers it",
+    "why": "No promise of model.rs's own a model or sim could keep: truefit#18 added a unit test (src/model.rs a_tlc_run_that_cannot_start_is_a_fault_naming_java_and_its_fix) that a TLC run that cannot start is the java fault with its fix, a check of kind test whose code truefit cannot see; truefit#10's two commits moved the covered-files helper (files) and shared contract::git, a refactor keeping no promise."
+  },
   "7b2443ff3277": {
     "mark": "promise",
     "sentence": "truefit drives a system only through commands the system declares in `truefit.toml`; it links no code of the systems it checks.",
@@ -77,6 +83,18 @@
     "mark": "promise",
     "sentence": "A `sim` check is reached only when a step of the last `truefit sim` named the invariant in its `checked`, in a state it is about (the simulation says which; truefit cannot judge a state); a `model` check only when the model's config checks an invariant of that name.",
     "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:14"
+  },
+  "985e55d8e4cb": {
+    "mark": "not",
+    "sentence": "A system's SPEC and ADRs make promises; nothing tied a promise to the check that keeps it, so one could sit with no check, or with a check that never exercises it, and nobody saw.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:7",
+    "why": "context of ADR 0002: what was missing, and precedent elsewhere; truefit makes no promise there"
+  },
+  "9ca84619abf7": {
+    "mark": "not",
+    "sentence": "Precedent: Antithesis counts an assertion never reached as failing; FoundationDB passes a test ensemble only when every code probe was hit; Kiro links each requirement to a property and its test, and concedes some map to none.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:9",
+    "why": "context of ADR 0002: what was missing, and precedent elsewhere; truefit makes no promise there"
   },
   "b67092a939ad": {
     "mark": "promise",

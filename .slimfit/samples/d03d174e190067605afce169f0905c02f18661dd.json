@@ -1,0 +1,29 @@
+{
+  "tip": "d03d174e190067605afce169f0905c02f18661dd",
+  "from": "4d5507f76c26767d56317da6d14682a24faa536e",
+  "pool": 6,
+  "drawn": {
+    "rust": [
+      {
+        "name": "src/model.rs:445:5: replace bound -> usize with 1",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:451:5: replace pooled -> Vec<Result<Value, Vec<Value>>> with vec![Ok(Default::default())]",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:482:5: replace panicked -> Value with Default::default()",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:451:5: replace pooled -> Vec<Result<Value, Vec<Value>>> with vec![]",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:445:5: replace bound -> usize with 0",
+        "outcome": "killed"
+      }
+    ]
+  }
+}

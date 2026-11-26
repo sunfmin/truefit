@@ -1,9 +1,9 @@
 {
   "suites": {
     "rust": {
-      "prod_lines": 3266,
-      "test_lines": 2754,
-      "tests": 69,
+      "prod_lines": 3263,
+      "test_lines": 2738,
+      "tests": 68,
       "failures": 0,
       "test_seconds": 0.012,
       "covered_lines": 2580,
@@ -55,6 +55,12 @@
       "test": "truefit::bin/truefit::promise::tests::words_match_whole_and_in_any_case",
       "hash": "37d98e422611b2ee",
       "reason": "Its 10 has_any cases (whole-word English, any case, hyphen-joined words, CJK substring matches and non-matches) and 2 same_name asserts are checked by no other test; the other_test only runs this code on the way to a stale-model task and asserts none of these outcomes. A merge would fold a pure table into a git-repo integration test in another crate target, hiding which behaviour failed."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time",
+      "hash": "db16931f376eb1f1",
+      "reason": "Its assertions (at most the bound of JVMs alive at once, more than one at once, bound+4 runs, answers in trace order) have no counterpart in the other test, and they need a stand-in java on PATH that logs liveness; the other test checks the real pinned TLC (temp dir isolation, real states/depth, broken spec), so folding the stand-in in would change what it checks."
     }
   ],
   "kept_files": [
@@ -75,10 +81,21 @@
       "reason": "Deep enough: callers see run (the whole contract check, real or stand-in only), faults (config validation), without_faults, version and the two record paths; behind them sit case dirs, process spawning, fault env, normalisation, comparison and the .truefit record/differ writes. Unit tests stay on internal seams (normalise, differ). The 90-day churn is features (faults, ready/needs, no_faults) plus truefit#32's move of config, host and date out of it; no pass-through or shallow piece is left to move."
     }
   ],
+  "kept_spans": [
+    {
+      "suite": "rust",
+      "file": "src/model.rs",
+      "start": 788,
+      "end": 792,
+      "function": "check_trace (closure)",
+      "hash": "63299962de7a9e30",
+      "reason": "The fault for a failed write of the trace's module into the scratch directory check_trace just made: only the host fails it (disk full, temp dir removed mid-run); no fast test can make a fresh directory unwritable without injecting the filesystem, and dropping the fault would leave a panic or a lost error."
+    }
+  ],
   "measured": {
     "rust": {
       "uncovered_lines": 13,
-      "test_seconds": 26.407
+      "test_seconds": 26.467
     }
   }
 }
