@@ -35,6 +35,9 @@ pub struct Model {
     config: String,
     #[serde(default = "default_limit")]
     limit: u64,
+    /// MB of Java heap TLC may take on it.
+    #[serde(default = "default_heap")]
+    heap: u64,
     #[serde(default = "default_init")]
     init: String,
     #[serde(default = "default_next")]
@@ -58,6 +61,9 @@ struct Cover {
 
 fn default_limit() -> u64 {
     300
+}
+fn default_heap() -> u64 {
+    1024
 }
 fn default_init() -> String {
     "Init".into()
@@ -87,6 +93,12 @@ pub fn faults(models: &[Model]) -> Vec<Value> {
             faults.push(fault(
                 format!("model `{n}` has a limit of 0 seconds"),
                 "give TLC the seconds it may take on it, e.g. limit = 60",
+            ));
+        }
+        if m.heap == 0 {
+            faults.push(fault(
+                format!("model `{n}` has a heap of 0 MB"),
+                "give TLC the MB of Java heap it may take on it, e.g. heap = 1024",
             ));
         }
     }
@@ -233,13 +245,28 @@ fn digest(bytes: &[u8]) -> String {
 }
 
 /// What one TLC run printed, what that says, whether it completed without
-/// an error, and how long it took.
+/// an error, how long it took, and how its JVM ended (`None`: killed past
+/// the model's limit).
 struct Tlc {
     output: String,
     read: Read,
     completed: bool,
     seconds: f64,
-    timed_out: bool,
+    exit: Option<std::process::ExitStatus>,
+}
+
+/// The JVM's bounds for one TLC run: TLC checks with one worker (no
+/// `-workers`), so the JVM is sized to one CPU, its GC and JIT threads with
+/// it, and to `heap_mb` of heap. Unbounded, it sizes them to every core and
+/// a quarter of the host's memory, and the runs at once of a busy host ask
+/// for several times what they use.
+fn jvm(heap_mb: u64) -> [String; 4] {
+    [
+        "-XX:ActiveProcessorCount=1".into(),
+        "-XX:+UseSerialGC".into(),
+        "-XX:CICompilerCount=2".into(),
+        format!("-Xmx{heap_mb}m"),
+    ]
 }
 
 /// Runs TLC on `spec` (the model `m`'s modules beside it) in `work`, then removes `work`.
@@ -262,7 +289,7 @@ fn run_tlc(
     let file = std::fs::File::create(&log).map_err(cannot)?;
     let start = Instant::now();
     let mut child = Command::new("java")
-        .arg("-XX:+UseParallelGC")
+        .args(jvm(m.heap))
         // Its own temporary files: TLC runs at once share none.
         .arg(format!("-Djava.io.tmpdir={}", work.display()))
         .arg(format!(
@@ -282,14 +309,14 @@ fn run_tlc(
         .stderr(file)
         .spawn()
         .map_err(cannot)?;
-    let timed_out = loop {
-        if child.try_wait().map_err(cannot)?.is_some() {
-            break false;
+    let exit = loop {
+        if let Some(status) = child.try_wait().map_err(cannot)? {
+            break Some(status);
         }
         if start.elapsed() > Duration::from_secs(m.limit) {
             let _ = child.kill();
             let _ = child.wait();
-            break true;
+            break None;
         }
         std::thread::sleep(Duration::from_millis(20));
     };
@@ -300,7 +327,7 @@ fn run_tlc(
         completed: output.contains("Model checking completed. No error has been found."),
         output,
         seconds: (start.elapsed().as_secs_f64() * 100.0).round() / 100.0,
-        timed_out,
+        exit,
     })
 }
 
@@ -557,7 +584,7 @@ fn check(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>> {
     let t = run_tlc(jar, root, m, workdir()?, &cfg, &spec)?;
     let mut r = json!({"name": m.name, "spec": m.spec, "seconds": t.seconds, "limit": m.limit});
     let read = t.read;
-    if t.timed_out {
+    if t.exit.is_none() {
         r["result"] = "timed out".into();
     } else if t.completed {
         r["result"] = "passes".into();
@@ -568,6 +595,7 @@ fn check(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>> {
         r["behaviour"] = read.behaviour.into();
     } else {
         r["result"] = "broken".into();
+        r["exit"] = t.exit.map(|e| e.to_string()).into();
     }
     r["states"] = read.states.into();
     r["depth"] = read.depth.into();
@@ -771,7 +799,7 @@ fn check_trace(
         .as_deref()
         .and_then(|e| e.strip_prefix("Invariant "))
         .and_then(|e| e.strip_suffix(" is violated."));
-    if t.timed_out {
+    if t.exit.is_none() {
         r["result"] = "timed out".into();
         r["output"] = tail(&t.output).into();
     } else if let (Against::Next, Some("TruefitUnfinished")) = (against, violated) {
@@ -796,6 +824,7 @@ fn check_trace(
             .map_or(Value::Null, |i| records[i].clone());
     } else {
         r["result"] = "broken".into();
+        r["exit"] = t.exit.map(|e| e.to_string()).into();
         r["error"] = read.error.into();
         r["output"] = tail(&t.output).into();
     }
@@ -1057,6 +1086,22 @@ mod tests {
         let out = "Progress(5) at 2026-11-20 10:00:00: 742 states generated (742 s/min), 742 distinct states found, 12 states left on queue.\nProgress(9) at 2026-11-20 10:01:00: 1,913 states generated (1,171 s/min), 913 distinct states found (171 ds/min), 40 states left on queue.\nModel checking completed. No error has been found.\n31,002 states generated, 29,705 distinct states found, 0 states left on queue.\nThe depth of the complete state graph search is 14.\n";
         let r = read(out);
         assert_eq!((r.states, r.depth), (Some(29705), Some(14)));
+    }
+
+    #[test]
+    fn each_tlc_jvm_is_bounded_to_one_cpu_its_gc_and_jit_and_the_model_heap() {
+        assert_eq!(
+            jvm(1024),
+            [
+                "-XX:ActiveProcessorCount=1",
+                "-XX:+UseSerialGC",
+                "-XX:CICompilerCount=2",
+                "-Xmx1024m",
+            ]
+        );
+        let m: Model =
+            toml::from_str("name = \"m\"\nspec = \"M.tla\"\nconfig = \"M.cfg\"\n").unwrap();
+        assert_eq!(m.heap, 1024);
     }
 
     #[test]
