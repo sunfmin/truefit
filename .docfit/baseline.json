@@ -1,6 +1,5 @@
 {
   "docs/adr/0001-truefit-holds-the-ties-between-tests-models-and-the-real-system.md": {
-    "local_refs": 5,
     "pointers": [
       "e2e.sh"
     ]
