@@ -1,0 +1,10 @@
+{
+  "tree": "f492f9ebfa827704b388230bc9b21d1ad4c2b8ab+d1fba762150c532c",
+  "lines": 54,
+  "serves": "truefit#45",
+  "considered": "model.rs's TLC run loop (try_wait + sleep until its limit, child.kill): it kills only the JVM, not its children, and polls; quiet's single recv_timeout on a reader thread that also reaps replaces contract.rs's unbounded Command::output, which is deleted",
+  "reviewer": "codex:01a21607-2fdd-7a03-b9cb-eb48d3423939:default",
+  "author": "claude-code:1ca9d6ed-1f7a-592b-9c47-caee2bddece1:opus",
+  "cut": "In src/contract.rs, use #[serde(default)] on Settings to share its Default impl and delete both per-field default functions. Remove version’s empty-command branch because quiet already returns Ok(None) for empty argv.",
+  "answer": "Both made (02db6cf). Then quiet's poll loop was replaced by one recv_timeout (bce6d87), fewer lines. The rest past 50 is the merge with truefit#46: stale now takes both the real program's name and the installed version, so rustfmt splits its signature."
+}
