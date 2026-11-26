@@ -460,7 +460,7 @@ fn trace_job<'e>(
 /// How many checks (each its own JVM, with its own heap) run at once: four,
 /// or the host's CPUs when fewer. TLC's own check takes the longest (17-92 s
 /// on factorium's models, each trace's 0.6-1 s), so one slot runs it and three
-/// the traces of a model of 14 within its time (truefit#43).
+/// the traces of a model of 14 within its time.
 fn bound() -> usize {
     std::thread::available_parallelism().map_or(1, |n| n.get().min(4))
 }

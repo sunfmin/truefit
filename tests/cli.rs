@@ -1186,7 +1186,7 @@ fn model_with_stand_in_java(tag: &str, accepts: usize, answer: &str) -> (PathBuf
     (dir, path)
 }
 
-/// truefit#43: a model's checks, one JVM each, run at most four (or the
+/// A model's checks, one JVM each, run at most four (or the
 /// host's CPUs) at once, each answered in its trace's place.
 #[test]
 fn a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time() {
@@ -1226,7 +1226,7 @@ fn a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time() {
     assert!(most > 1, "they ran one at a time: {log}");
 }
 
-/// truefit#43: a check that panics is a fault naming its trace, exit 2, not
+/// A check that panics is a fault naming its trace, exit 2, not
 /// a panic of truefit. Here TLC says the search ended past the trace's last
 /// record, which reads past the trace's records.
 #[test]
