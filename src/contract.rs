@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const PARTS: [&str; 4] = ["exit", "stdout", "stderr", "files"];
 
@@ -438,48 +438,41 @@ fn quiet(
     argv: &[String],
     limit: u64,
 ) -> Result<Option<(ExitStatus, Vec<u8>)>, String> {
-    let Some(program) = argv.first().and_then(|p| find(root, p)) else {
+    let spawned = argv.first().and_then(|p| find(root, p)).and_then(|p| {
+        let mut command = Command::new(p);
+        command
+            .args(&argv[1..])
+            .current_dir(root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        // Its own process group, so a kill reaches the children it started too.
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        command.spawn().ok()
+    });
+    let Some(mut child) = spawned else {
         return Ok(None);
     };
-    let mut command = Command::new(program);
-    command
-        .args(&argv[1..])
-        .current_dir(root)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    // Its own process group, so a kill reaches the children it started too.
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let Ok(mut child) = command.spawn() else {
-        return Ok(None);
-    };
-    let mut stdout = child.stdout.take().unwrap();
+    let pid = child.id();
     let (tx, rx) = std::sync::mpsc::channel();
+    // Its stdout closes once it and every child holding it are done.
     std::thread::spawn(move || {
         let mut out = Vec::new();
-        let _ = stdout.read_to_end(&mut out);
-        let _ = tx.send(out);
+        let _ = child.stdout.take().unwrap().read_to_end(&mut out);
+        let _ = tx.send(child.wait().map(|status| (status, out)));
     });
-    let deadline = Instant::now() + Duration::from_secs(limit);
-    // Its stdout closes when it and every child holding it are done.
-    if let Ok(out) = rx.recv_timeout(Duration::from_secs(limit)) {
-        while Instant::now() < deadline {
-            match child.try_wait() {
-                Ok(Some(status)) => return Ok(Some((status, out))),
-                Ok(None) => std::thread::sleep(Duration::from_millis(5)),
-                Err(_) => return Ok(None),
+    match rx.recv_timeout(Duration::from_secs(limit)) {
+        Ok(done) => Ok(done.ok()),
+        Err(_) => {
+            // SAFETY: kill(2) on the process group it leads; it touches no memory.
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
             }
+            Err(format!("`{}` timed out after {limit} s", argv.join(" ")))
         }
     }
-    #[cfg(unix)]
-    // SAFETY: kill(2) on the process group it leads; it touches no memory.
-    unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-    Err(format!("`{}` timed out after {limit} s", argv.join(" ")))
 }
 
 /// Runs `prefix` + the case's args in a fresh directory holding a copy of the

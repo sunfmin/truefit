@@ -2434,6 +2434,7 @@ name = "c"
 name = "echo"
 run = ["/bin/echo"]
 real = ["echo"]
+ready = ["true"]
 version = ["./hang", "version"]
 [[standin.case]]
 name = "c"
