@@ -1591,6 +1591,11 @@ fn model_faults_exit_2() {
             vec!["model"],
             "limit of 0",
         ),
+        (
+            config("model-no-heap", &model("m", &format!("{covers}heap = 0\n"))),
+            vec!["model"],
+            "heap of 0 MB",
+        ),
         (plain.clone(), vec!["model", "other"], "no model `other`"),
         (
             plain.clone(),
