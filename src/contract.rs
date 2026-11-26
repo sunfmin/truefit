@@ -406,14 +406,15 @@ impl Standin {
     }
 }
 
-/// Why every test through `s` can only succeed, with its stand-in's SHA-256
-/// now; None when it declares faults, or `no_faults` for it as it is now.
+/// Why every test through `s` can only succeed, with its stand-in's
+/// (`program`'s) SHA-256 now; None when it declares faults, or `no_faults`
+/// for it as it is now.
 pub fn without_faults(
     root: &Path,
     s: &Standin,
-    standins: &[String],
+    program: &str,
 ) -> Option<(&'static str, Option<String>)> {
-    let sha = find(root, &s.programs(root, standins).0).and_then(|p| crate::model::sha256(&p));
+    let sha = find(root, program).and_then(|p| crate::model::sha256(&p));
     let kept = s.no_faults.as_ref();
     if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
         return None;

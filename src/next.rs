@@ -40,18 +40,12 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
     }
     let today = date::days(&date::today()).unwrap_or(0);
     for s in &config.standin {
-        let programs = s.programs(root, globs);
-        tasks.extend(stale(
-            root,
-            s,
-            programs.1,
-            today,
-            config.contract.fresh_days,
-        ));
-        tasks.extend(without_faults(root, s, (&programs.0, programs.1), globs));
+        let (program, real) = s.programs(root, globs);
+        tasks.extend(stale(root, s, real, today, config.contract.fresh_days));
+        tasks.extend(without_faults(root, s, (&program, real)));
         let differ = host::read(root, &contract::differ_file(&s.name));
         if !differ.is_null() {
-            tasks.push(differing(s, (&programs.0, programs.1), differ));
+            tasks.push(differing(s, (&program, real), differ));
         }
     }
     tasks.extend(crate::sim::tasks(root));
@@ -144,13 +138,8 @@ fn stale(root: &Path, s: &Standin, real: &str, today: u64, fresh_days: u64) -> O
 
 /// A `standin-without-faults` task, if `s` declares no fault and no
 /// `no_faults` kept for the stand-in as it is now.
-fn without_faults(
-    root: &Path,
-    s: &Standin,
-    (program, real): (&str, &str),
-    globs: &[String],
-) -> Option<Value> {
-    let (why, sha) = contract::without_faults(root, s, globs)?;
+fn without_faults(root: &Path, s: &Standin, (program, real): (&str, &str)) -> Option<Value> {
+    let (why, sha) = contract::without_faults(root, s, program)?;
     let kept = s.no_faults.as_ref();
     Some(json!({
         "kind": "standin-without-faults",
