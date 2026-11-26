@@ -1156,6 +1156,101 @@ fn model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_
     );
 }
 
+/// The sample with `accepts` copies of its accept trace and no reject trace,
+/// and on PATH a stand-in `java` that answers `answer` to every TLC run, after
+/// it has held its place in `alive/` for a moment. Each run appends to
+/// `alive.log` how many were alive with it.
+fn model_with_stand_in_java(tag: &str, accepts: usize, answer: &str) -> (PathBuf, String) {
+    let dir = model_sample(tag, &[]);
+    let traces = dir.join(".truefit/traces/queue");
+    std::fs::remove_dir_all(traces.join("reject")).unwrap();
+    let one = std::fs::read(traces.join("accept/1.jsonl")).unwrap();
+    for i in 2..=accepts {
+        std::fs::write(traces.join(format!("accept/{i:02}.jsonl")), &one).unwrap();
+    }
+    let (bin, alive) = (dir.join("bin"), dir.join("alive"));
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(&alive).unwrap();
+    let java = bin.join("java");
+    std::fs::write(
+        &java,
+        format!(
+            "#!/bin/sh\nmkdir {a}/$$\nls {a} | wc -l >> {a}.log\nsleep 0.3\nrmdir {a}/$$\nprintf '{answer}'\n",
+            a = alive.display()
+        ),
+    )
+    .unwrap();
+    let ok = Command::new("chmod").arg("+x").arg(&java).status().unwrap();
+    assert!(ok.success());
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    (dir, path)
+}
+
+/// truefit#43: a model's checks, one JVM each, run at most four (or the
+/// host's CPUs) at once, each answered in its trace's place.
+#[test]
+fn a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time() {
+    let bound = std::thread::available_parallelism().unwrap().get().min(4);
+    // TLC's check passes; each trace check reaches the trace's end.
+    let (dir, path) = model_with_stand_in_java(
+        "model-bound",
+        bound + 3,
+        "Model checking completed. No error has been found.\\nError: Invariant TruefitUnfinished is violated.\\n",
+    );
+    let (code, out) = answer(
+        Command::new(env!("CARGO_BIN_EXE_truefit"))
+            .arg("model")
+            .current_dir(&dir)
+            .env("PATH", path),
+    );
+    assert_eq!(code, Some(0), "{out:#}");
+    let queue = &out["models"][0];
+    assert_eq!(queue["result"], "passes", "{out:#}");
+    let files: Vec<&str> = queue["traces"]["accept"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            assert_eq!(t["result"], "allowed", "{t:#}");
+            t["file"].as_str().unwrap()
+        })
+        .collect();
+    let mut sorted = files.clone();
+    sorted.sort();
+    assert_eq!((files.len(), &files), (bound + 3, &sorted));
+    let log = std::fs::read_to_string(dir.join("alive.log")).unwrap();
+    let alive: Vec<usize> = log.lines().map(|l| l.trim().parse().unwrap()).collect();
+    assert_eq!(alive.len(), bound + 4, "TLC's run and each trace's: {log}");
+    let most = *alive.iter().max().unwrap();
+    assert!(most <= bound, "{most} JVMs at once, past {bound}: {log}");
+    assert!(most > 1, "they ran one at a time: {log}");
+}
+
+/// truefit#43: a check that panics is a fault naming its trace, exit 2, not
+/// a panic of truefit. Here TLC says the search ended past the trace's last
+/// record, which reads past the trace's records.
+#[test]
+fn a_check_that_panics_is_a_fault_naming_its_trace() {
+    let (dir, path) = model_with_stand_in_java(
+        "model-panic",
+        1,
+        "Model checking completed. No error has been found.\\nThe depth of the complete state graph search is 99.\\n",
+    );
+    let (code, out) = answer(
+        Command::new(env!("CARGO_BIN_EXE_truefit"))
+            .arg("model")
+            .current_dir(&dir)
+            .env("PATH", path),
+    );
+    assert_eq!(code, Some(2), "{out:#}");
+    let fault = out["error"][0]["fault"].as_str().unwrap();
+    assert!(
+        fault.starts_with("the check of trace .truefit/traces/queue/accept/1.jsonl panicked: "),
+        "{out:#}"
+    );
+    assert!(out["error"][0]["fix"].is_string(), "{out:#}");
+}
+
 #[test]
 fn a_trace_the_model_allows_passes_and_one_it_does_not_names_its_first_disallowed_step() {
     // Seed 1 runs every message once; seed 3 crashes after applying message

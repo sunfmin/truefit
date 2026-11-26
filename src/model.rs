@@ -349,22 +349,36 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
         traces(root, &m.name, "accept"),
         traces(root, &m.name, "reject"),
     );
-    let (r, accepted, rejected) = std::thread::scope(|s| {
-        let tlc = s.spawn(|| check(root, m, jar));
-        let run = |f, against| spawn_trace(s, root, m, jar, f, against);
-        let a: Vec<_> = accept.iter().map(|f| run(f, Against::Next)).collect();
-        let b: Vec<_> = reject
-            .iter()
-            .map(|f| (run(f, Against::Next), run(f, Against::Invariants)))
+    // TLC's own check first, as it takes the longest; then each trace's.
+    let mut jobs: Vec<(String, Job<'_>)> = vec![(
+        format!("model {}", m.name),
+        Box::new(|| check(root, m, jar)),
+    )];
+    for f in &accept {
+        jobs.push((
+            format!("trace {f}"),
+            trace_job(root, m, jar, f, Against::Next),
+        ));
+    }
+    for f in &reject {
+        jobs.push((
+            format!("trace {f}"),
+            trace_job(root, m, jar, f, Against::Next),
+        ));
+        jobs.push((
+            format!("trace {f}"),
+            trace_job(root, m, jar, f, Against::Invariants),
+        ));
+    }
+    // One answer per job, in its place: TLC's, each accept trace's, then
+    // each reject trace's pair.
+    let mut answers = pooled(jobs, bound()).into_iter();
+    let r = answers.next().unwrap_or(Ok(Value::Null));
+    let accepted: Result<Vec<Value>, Vec<Value>> = answers.by_ref().take(accept.len()).collect();
+    let rejected: Result<Vec<(Value, Value)>, Vec<Value>> =
+        std::iter::from_fn(|| Some((answers.next()?, answers.next()?)))
+            .map(|(n, i)| Ok((n?, i?)))
             .collect();
-        let join = |h: std::thread::ScopedJoinHandle<'_, _>| h.join().unwrap();
-        let a: Result<Vec<Value>, Vec<Value>> = a.into_iter().map(join).collect();
-        let b: Result<Vec<(Value, Value)>, Vec<Value>> = b
-            .into_iter()
-            .map(|(n, i)| Ok((join(n)?, join(i)?)))
-            .collect();
-        (join(tlc), a, b)
-    });
     let (mut r, accepted, rejected) = (r?, accepted?, rejected?);
     let mut wrong = Vec::new();
     for t in &accepted {
@@ -430,16 +444,70 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
     Ok(r)
 }
 
-/// A trace's check, on a thread of `s`.
-fn spawn_trace<'s, 'e>(
-    s: &'s std::thread::Scope<'s, 'e>,
+/// One check of a model's: TLC's, or a trace's.
+type Job<'e> = Box<dyn FnOnce() -> Result<Value, Vec<Value>> + Send + 'e>;
+
+fn trace_job<'e>(
     root: &'e Path,
     m: &'e Model,
     jar: &'e Path,
     file: &'e str,
     against: Against,
-) -> std::thread::ScopedJoinHandle<'s, Result<Value, Vec<Value>>> {
-    s.spawn(move || check_trace(root, m, jar, file, against))
+) -> Job<'e> {
+    Box::new(move || check_trace(root, m, jar, file, against))
+}
+
+/// How many checks (each its own JVM, with its own heap) run at once: four,
+/// or the host's CPUs when fewer. TLC's own check takes the longest (17-92 s
+/// on factorium's models, each trace's 0.6-1 s), so one slot runs it and three
+/// the traces of a model of 14 within its time (truefit#43).
+fn bound() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(4))
+}
+
+/// Runs each job, at most `bound` at once, and answers each in its job's
+/// place. A job that panics answers a fault naming what it checked.
+fn pooled(jobs: Vec<(String, Job<'_>)>, bound: usize) -> Vec<Result<Value, Vec<Value>>> {
+    let n = jobs.len();
+    let queue = std::sync::Mutex::new(jobs.into_iter().enumerate());
+    let mut done: Vec<(usize, Result<Value, Vec<Value>>)> = std::thread::scope(|s| {
+        let workers: Vec<_> = (0..bound.clamp(1, n.max(1)))
+            .map(|_| {
+                s.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let next = queue.lock().unwrap_or_else(|e| e.into_inner()).next();
+                        let Some((i, (what, job))) = next else {
+                            break done;
+                        };
+                        let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job))
+                            .unwrap_or_else(|p| Err(vec![panicked(&what, p.as_ref())]));
+                        done.push((i, answer));
+                    }
+                })
+            })
+            .collect();
+        // A job's panic is caught where it runs: a worker never panics.
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap_or_default())
+            .collect()
+    });
+    done.sort_by_key(|(i, _)| *i);
+    done.into_iter().map(|(_, a)| a).collect()
+}
+
+/// The fault of a check that panicked: what it checked, and the panic's message.
+fn panicked(what: &str, payload: &(dyn std::any::Any + Send)) -> Value {
+    let message = payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_default();
+    fault(
+        format!("the check of {what} panicked: {message}"),
+        "a bug of truefit's: report it with this trace and the model's spec and config",
+    )
 }
 
 /// ` at step N` when a trace report names the step it stopped at.

@@ -254,7 +254,9 @@ downloads it once from the official release into
 whose checksum differs is refused. TLC runs on `java` (11 or later) on PATH.
 It runs in a temporary directory of its own (TLC's java temp dir too, so
 runs at once on one host do not share unpacked modules); nothing but the
-record is written in the repo.
+record is written in the repo. A model's checks, TLC's and each committed
+trace's (each its own JVM), run at most four at once (fewer on a host with
+fewer CPUs). A check that panics is a fault naming its trace.
 
 ### `[[model]]` in `truefit.toml`
 
