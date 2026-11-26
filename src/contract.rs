@@ -16,14 +16,11 @@ const PARTS: [&str; 4] = ["exit", "stdout", "stderr", "files"];
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Settings {
-    #[serde(default)]
     pub standins: Option<Vec<String>>,
-    #[serde(default = "default_fresh_days")]
     pub fresh_days: u64,
     /// Seconds a `ready` or `version` command may take before it is killed.
-    #[serde(default = "default_fact_limit")]
     pub fact_limit: u64,
 }
 
@@ -31,18 +28,10 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             standins: None,
-            fresh_days: default_fresh_days(),
-            fact_limit: default_fact_limit(),
+            fresh_days: 30,
+            fact_limit: 10,
         }
     }
-}
-
-fn default_fresh_days() -> u64 {
-    30
-}
-
-fn default_fact_limit() -> u64 {
-    10
 }
 
 #[derive(Deserialize)]
@@ -408,9 +397,6 @@ pub fn differ_file(name: &str) -> String {
 /// The first line its `version` command prints here, or None: none declared,
 /// or it cannot run; Err when it ran past `limit` seconds.
 pub fn version(root: &Path, s: &Standin, limit: u64) -> Result<Option<String>, String> {
-    if s.version.is_empty() {
-        return Ok(None);
-    }
     Ok(quiet(root, &s.version, limit)?.map(|(_, out)| {
         String::from_utf8_lossy(&out)
             .lines()
