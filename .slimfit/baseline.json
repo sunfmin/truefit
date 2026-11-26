@@ -1,23 +1,17 @@
 {
   "suites": {
     "rust": {
-      "prod_lines": 3227,
-      "test_lines": 2731,
-      "tests": 67,
+      "prod_lines": 3266,
+      "test_lines": 2754,
+      "tests": 69,
       "failures": 0,
       "test_seconds": 0.012,
-      "covered_lines": 2549,
+      "covered_lines": 2580,
       "uncovered_lines": 0
     }
   },
   "loosened": [],
   "kept": [
-    {
-      "suite": "rust",
-      "test": "truefit::cli::model_states_are_tlcs_distinct_states_under_symmetry",
-      "hash": "129c918f0d45cd80",
-      "reason": "Its own sample (testdata/symmetry, 2002 states under SYMMETRY); none of its assertions is in the at-once test, and the two samples cannot share one run."
-    },
     {
       "suite": "rust",
       "test": "truefit::cli::sim_catches_a_nondeterministic_simulation_at_the_first_step_that_differs",
@@ -84,7 +78,7 @@
   "measured": {
     "rust": {
       "uncovered_lines": 13,
-      "test_seconds": 30.577
+      "test_seconds": 26.407
     }
   }
 }

@@ -160,6 +160,19 @@ mod tests {
     }
 
     #[test]
+    fn split_ends_a_sentence_at_a_numbered_item_and_a_blank_line() {
+        assert_eq!(
+            split("Steps\n1. one\n2. two\n\nNext part\n"),
+            vec![
+                (1, "Steps".into()),
+                (2, "one".into()),
+                (3, "two".into()),
+                (5, "Next part".into()),
+            ]
+        );
+    }
+
+    #[test]
     fn split_cuts_chinese_and_japanese_at_full_width_marks() {
         let quote = "> **状态**：草案  \n> **原则**：100% 本地。\n";
         assert_eq!(
