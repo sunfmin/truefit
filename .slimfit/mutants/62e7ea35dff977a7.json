@@ -1,0 +1,6 @@
+{
+  "tree": "d5b37e10b21f50056c6c835107c6861688d4b81c+d1fba762150c532c",
+  "picker": "codex:01a21560-f090-7a32-9809-e06996c266c1:default",
+  "author": "claude-code:dd1cbf5c-ae6a-5c22-8470-1523ef7295d3:opus",
+  "none": "The CLI tests require overlapping JVM runs, a passing model with every expected trace result, and a fault naming the panicking trace, so each listed mutant violates an explicit assertion."
+}

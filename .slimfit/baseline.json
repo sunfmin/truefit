@@ -1,12 +1,12 @@
 {
   "suites": {
     "rust": {
-      "prod_lines": 3100,
-      "test_lines": 2457,
-      "tests": 62,
+      "prod_lines": 3132,
+      "test_lines": 2551,
+      "tests": 64,
       "failures": 0,
       "test_seconds": 0.012,
-      "covered_lines": 2441,
+      "covered_lines": 2466,
       "uncovered_lines": 0
     }
   },
@@ -81,21 +81,10 @@
       "reason": "Deep enough: callers see run (the whole contract check, real or stand-in only), faults (config validation), without_faults, version and the two record paths; behind them sit case dirs, process spawning, fault env, normalisation, comparison and the .truefit record/differ writes. Unit tests stay on internal seams (normalise, differ). The 90-day churn is features (faults, ready/needs, no_faults) plus truefit#32's move of config, host and date out of it; no pass-through or shallow piece is left to move."
     }
   ],
-  "kept_spans": [
-    {
-      "suite": "rust",
-      "file": "src/model.rs",
-      "start": 714,
-      "end": 718,
-      "function": "check_trace (closure)",
-      "hash": "63299962de7a9e30",
-      "reason": "Error path for writing TruefitTrace.tla/.cfg into the scratch dir host::scratch() has just created; it fails only on a full disk or a dir removed underneath, which no fast test can bring about, and check_trace is reached only through TLC (a java process). Deleting it would turn an I/O error into a panic. Same span (hash 63299962de7a9e30) as kept in truefit#28 at 711-715, moved 3 lines."
-    }
-  ],
   "measured": {
     "rust": {
       "uncovered_lines": 13,
-      "test_seconds": 35.202
+      "test_seconds": 32.19
     }
   }
 }
