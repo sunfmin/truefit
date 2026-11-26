@@ -2416,3 +2416,82 @@ fn a_kept_end_is_declared_rightly_or_exits_2() {
         );
     }
 }
+
+#[test]
+fn a_version_or_ready_command_past_fact_limit_is_killed_with_its_children_and_named() {
+    let dir = config(
+        "fact-limit",
+        r#"[contract]
+fact_limit = 1
+[[standin]]
+name = "hangs"
+run = ["/bin/echo"]
+real = ["echo"]
+ready = ["./hang", "ready"]
+[[standin.case]]
+name = "c"
+[[standin]]
+name = "echo"
+run = ["/bin/echo"]
+real = ["echo"]
+version = ["./hang", "version"]
+[[standin.case]]
+name = "c"
+"#,
+    );
+    // It starts a child that holds its stdout, and waits on it forever.
+    let hang = dir.join("hang");
+    std::fs::write(
+        &hang,
+        "#!/bin/sh\nsleep 600 &\necho $! > \"$1.pid\"\nwait\n",
+    )
+    .unwrap();
+    Command::new("chmod").arg("+x").arg(&hang).status().unwrap();
+    let gone = |which: &str| {
+        let pid = std::fs::read_to_string(dir.join(format!("{which}.pid"))).unwrap();
+        // A killed child is reaped by launchd soon after, not at once.
+        (0..50).any(|_| {
+            let alive = Command::new("kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            !alive
+        })
+    };
+    let start = std::time::Instant::now();
+    let (code, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(start.elapsed().as_secs_f64() < 2.0, "{:?}", start.elapsed());
+    assert_eq!(code, Some(0), "{out:#}");
+    assert_eq!(
+        out["counts"]["stale-contract"], 2,
+        "the other stand-in is still read: {out:#}"
+    );
+    assert!(
+        out["notes"].as_array().unwrap().iter().any(|n| n
+            .as_str()
+            .unwrap()
+            .contains("stand-in echo: `./hang version` timed out after 1 s")),
+        "{out:#}"
+    );
+    assert!(gone("version"), "its child is left running");
+    let start = std::time::Instant::now();
+    let (code, out) = truefit_in(&dir, &["contract", "--real"]);
+    assert!(start.elapsed().as_secs_f64() < 3.0, "{:?}", start.elapsed());
+    assert_eq!(code, Some(1), "{out:#}");
+    assert_eq!(out["standins"][0]["result"], "not run");
+    assert_eq!(
+        out["standins"][0]["why"],
+        "`./hang ready` timed out after 1 s"
+    );
+    assert!(gone("ready"), "its child is left running");
+    // A real run that passes still passes; its version is unknown, and why.
+    assert_eq!(out["standins"][1]["result"], "pass", "{out:#}");
+    assert!(out["standins"][1]["real_run"]["version"].is_null());
+    assert_eq!(
+        out["standins"][1]["version"],
+        "`./hang version` timed out after 1 s"
+    );
+}
