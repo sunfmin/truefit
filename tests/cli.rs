@@ -2508,4 +2508,20 @@ name = "c"
         .unwrap();
     assert_eq!(task["files"][0], "tests/fake-y");
     assert!(task["steps"].as_str().unwrap().contains("`real-y`"));
+    // Behind another wrapper than the stand-in's, the real program is `real[0]`.
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let other = toml.replace(
+        "[\"tests/wrap\", \"real-y\"]",
+        "[\"other-wrap\", \"real-y\"]",
+    );
+    std::fs::write(dir.join("truefit.toml"), other).unwrap();
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    let steps = out["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "standin-without-faults")
+        .unwrap()["steps"]
+        .clone();
+    assert!(steps.as_str().unwrap().contains("`other-wrap`"), "{steps}");
 }
