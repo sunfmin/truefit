@@ -46,6 +46,9 @@ Each declared stand-in and its real program answer the same cases alike.
   to produce on this host: an unreachable network) is `not run`, with its
   `needs`; the other cases still run, but the real run is `not run` and
   records nothing.
+- A `ready` or `version` command still running after `fact_limit` seconds is
+  killed with every process it started, and named as timed out: its `ready`
+  is not met (`not run`), its version unknown (`next` says so in `notes`).
 
 Run from the directory holding `truefit.toml`; command paths with a `/` in
 them are relative to it, others are looked up on PATH.
@@ -56,6 +59,7 @@ them are relative to it, others are looked up on PATH.
 [contract]
 standins = ["tests/fake-*", "tests/fakes"] # where the repo's stand-ins live
 fresh_days = 30                       # a passing real run older is stale (default 30)
+fact_limit = 10                       # seconds a `ready` or `version` command may take (default 10)
 
 [[standin]]
 name = "git"                          # what `--real <name>` names
@@ -85,6 +89,16 @@ args = ["push", "origin", "main"]     # the real side, never told, fails for rea
 ready = ["sh", "-c", "! curl -sm2 https://example.com"] # else this case is not run,
 needs = "a host with no network"      #   with what it needs
 ```
+
+`run` may start with a wrapper (a script that runs the program it is given
+and prints only what the system reads of its answer): `run = ["tests/shape",
+"tests/fake-git"]`, `real = ["tests/shape", "git"]`. The stand-in is then the
+word of `run` naming a file under `[contract] standins`, by its path or, when
+one file there has that name, by its name alone (`"fake-git"`, for a wrapper
+that runs it from beside itself); else `run[0]`. That file is what the
+contract covers and what `no_faults` hashes. The real
+program is `real`'s word in the same place when `real` starts with the same
+wrapper (else `real[0]`).
 
 Both sides run each case in their own fresh directory. That directory's path
 becomes `<dir>` in their answers; then each `normalise` rule (a regex and its
@@ -213,9 +227,11 @@ of them.
   `timed out`, `broken`), `states` (distinct) and `depth`, and `seconds`. A
   model that fails has TLC's `error` (`Invariant AppliedOnce is violated.`)
   and the `behaviour` that reaches it: each state with the `action` that
-  took it there and its variables. One that is `broken` (TLC could not parse
-  or evaluate it) or `timed out` has the `output` TLC printed from its first
-  error. Cheap when the bounds are small: put it in the gate. With it, at
+  took it there and its variables. One that is `broken` (TLC ended with no
+  verdict: it could not parse or evaluate the model, ran out of its `heap`,
+  or its JVM was killed by another process) has its `exit` (`exit status:
+  1`, `signal: 9 (SIGKILL)`). One `broken` or `timed out` (truefit killed it
+  at its `limit`) has the `output` TLC printed from its first error. Cheap when the bounds are small: put it in the gate. With it, at
   once, it reruns the model's committed traces (`traces`): each under
   `.truefit/traces/<name>/accept/` must be `allowed`, and each under
   `reject/` `disallowed`, its records breaking one of the config's
@@ -240,7 +256,8 @@ of them.
   this run. `disallowed`: the first `record` no step of the model reaches
   (`step`, the record's own), with the last allowed record, `after` (null:
   the first record is disallowed). `broken`: TLC could not evaluate the
-  mapping on a record (`output`: a field the record lacks, say). The trace
+  mapping on a record (`output`: a field the record lacks, say), or ended
+  with no verdict (`exit`, as a model's). The trace
   check asks only whether the model allows the run; the model's properties
   are `truefit model`'s.
 
@@ -256,7 +273,8 @@ It runs in a temporary directory of its own (TLC's java temp dir too, so
 runs at once on one host do not share unpacked modules); nothing but the
 record is written in the repo. A model's checks, TLC's and each committed
 trace's (each its own JVM), run at most four at once (fewer on a host with
-fewer CPUs). A check that panics is a fault naming its trace.
+fewer CPUs). Each JVM is sized to the one worker TLC checks with: one CPU
+for its GC and compiler threads, and the model's `heap`. A check that panics is a fault naming its trace.
 
 ### `[[model]]` in `truefit.toml`
 
@@ -266,6 +284,7 @@ name = "queue"             # what `truefit model <name>` names
 spec = "models/Queue.tla"  # relative to truefit.toml; modules it EXTENDS beside it
 config = "models/Queue.cfg" # TLC's config: CONSTANTS, SPECIFICATION, INVARIANT ...
 limit = 60                 # seconds TLC may take on it (default 300)
+heap = 1024                # MB of Java heap TLC may take on it (default 1024)
 init = "Init"              # the initial predicate and next-state action
 next = "Next"              #   a trace is checked against (these are the defaults)
 # The coverage record: the code each action (or property) stands for, and
