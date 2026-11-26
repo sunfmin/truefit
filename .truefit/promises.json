@@ -84,6 +84,18 @@
     "sentence": "A `sim` check is reached only when a step of the last `truefit sim` named the invariant in its `checked`, in a state it is about (the simulation says which; truefit cannot judge a state); a `model` check only when the model's config checks an invariant of that name.",
     "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:14"
   },
+  "985e55d8e4cb": {
+    "mark": "not",
+    "sentence": "A system's SPEC and ADRs make promises; nothing tied a promise to the check that keeps it, so one could sit with no check, or with a check that never exercises it, and nobody saw.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:7",
+    "why": "context of ADR 0002: what was missing, and precedent elsewhere; truefit makes no promise there"
+  },
+  "9ca84619abf7": {
+    "mark": "not",
+    "sentence": "Precedent: Antithesis counts an assertion never reached as failing; FoundationDB passes a test ensemble only when every code probe was hit; Kiro links each requirement to a property and its test, and concedes some map to none.",
+    "source": "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md:9",
+    "why": "context of ADR 0002: what was missing, and precedent elsewhere; truefit makes no promise there"
+  },
   "b67092a939ad": {
     "mark": "promise",
     "sentence": "truefit never decides from prose alone that a sentence is a promise.",

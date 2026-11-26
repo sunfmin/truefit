@@ -4,11 +4,6 @@
       "e2e.sh"
     ]
   },
-  "docs/adr/0002-a-promise-registry-ties-each-promise-to-its-check-up-a-fixed-ladder.md": {
-    "bytes": 3611,
-    "local_refs": 2,
-    "paragraph": 670
-  },
   "docs/adr/0003-releases-are-signed-and-notarized-by-the-taps-workflow.md": {
     "local_refs": 3,
     "pointers": [
