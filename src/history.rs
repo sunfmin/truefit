@@ -4,7 +4,8 @@
 
 use crate::config::{CONFIG, Config};
 use crate::host;
-use crate::promise::{MARKS, has_any, hash, same_name};
+use crate::promise::{MARKS, same_name};
+use crate::prose::{has_any, hash};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

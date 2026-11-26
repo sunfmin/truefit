@@ -1,0 +1,34 @@
+{
+  "tree": "9192ab12f9bf3a02b362821aa8a3e523db76527b+98c10765f07eefa7",
+  "picker": "codex:01a21849-8b42-7852-8f88-3432f4e45289:default",
+  "author": "claude-code:3397ad6b-bec4-5fa9-a75f-7d86ce801e42:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/prose.rs:19:39: delete ! in split",
+        "why": "A nonempty numeric prefix would no longer mark an ordered list item, and the shown fixtures use only unordered items.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/prose.rs:20:59: replace || with && in split",
+        "why": "This drops the flush at blank lines, headings, and tables, and the shown fixture reaches those boundaries with no prose pending.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/prose.rs:107:25: delete ! in has_any",
+        "why": "Consecutive punctuation would introduce extra spaces and prevent a multiword keyword from matching across that punctuation.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/prose.rs:132:5: replace hash -> String with \"xyzzy\".into()",
+        "why": "A constant key preserves equality across rewrapping or bolding and exposes whether tests also require distinct sentences to have distinct keys.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  },
+  "added_lines": 115
+}
