@@ -2489,6 +2489,8 @@ standins = ["tests/fake-*"]
 name = "y"
 run = ["tests/wrap", "fake-y"]
 real = ["tests/wrap", "real-y"]
+[[standin.case]]
+name = "c"
 "#,
     );
     std::fs::create_dir_all(dir.join("tests")).unwrap();
@@ -2499,8 +2501,11 @@ real = ["tests/wrap", "real-y"]
     }
     let (_, out) = truefit_in(&dir, &["next", "--all"]);
     assert!(out["counts"].get("no-contract").is_none(), "{out:#}");
-    let task = &out["tasks"][0];
-    assert_eq!(task["kind"], "standin-without-faults", "{out:#}");
+    let tasks = out["tasks"].as_array().unwrap();
+    let task = tasks
+        .iter()
+        .find(|t| t["kind"] == "standin-without-faults")
+        .unwrap();
     assert_eq!(task["files"][0], "tests/fake-y");
     assert!(task["steps"].as_str().unwrap().contains("`real-y`"));
 }
