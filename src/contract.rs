@@ -366,10 +366,38 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     report
 }
 
+impl Standin {
+    /// The stand-in itself and the real program it stands in for. `run` may
+    /// start with a wrapper: the stand-in is its word naming a file under
+    /// `standins` (`[contract] standins`), else `run[0]`; the real program is
+    /// `real`'s word in the same place when `real` starts with the same
+    /// wrapper, else `real[0]`.
+    pub fn programs(&self, root: &Path, standins: &[String]) -> (&str, &str) {
+        let canon = |w: &str| find(root, w)?.canonicalize().ok();
+        let under: Vec<_> = standins
+            .iter()
+            .flat_map(|g| crate::next::expand(root, g))
+            .filter_map(|p| canon(&p))
+            .collect();
+        let at = (self.run.iter())
+            .position(|w| canon(w).is_some_and(|p| under.contains(&p)))
+            .unwrap_or(0);
+        let real = match self.real.get(at) {
+            Some(r) if self.real[..at] == self.run[..at] => r,
+            _ => &self.real[0],
+        };
+        (&self.run[at], real)
+    }
+}
+
 /// Why every test through `s` can only succeed, with its stand-in's SHA-256
 /// now; None when it declares faults, or `no_faults` for it as it is now.
-pub fn without_faults(root: &Path, s: &Standin) -> Option<(&'static str, Option<String>)> {
-    let sha = find(root, &s.run[0]).and_then(|p| crate::model::sha256(&p));
+pub fn without_faults(
+    root: &Path,
+    s: &Standin,
+    standins: &[String],
+) -> Option<(&'static str, Option<String>)> {
+    let sha = find(root, s.programs(root, standins).0).and_then(|p| crate::model::sha256(&p));
     let kept = s.no_faults.as_ref();
     if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
         return None;

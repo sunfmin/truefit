@@ -2416,3 +2416,60 @@ fn a_kept_end_is_declared_rightly_or_exits_2() {
         );
     }
 }
+
+#[test]
+fn a_stand_in_behind_a_wrapper_is_the_run_word_under_standins() {
+    let dir = config(
+        "wrapped",
+        r#"[contract]
+standins = ["tests/fake-*"]
+[[standin]]
+name = "x"
+run = ["tests/wrap", "tests/fake-x"]
+real = ["tests/wrap", "echo"]
+[[standin.case]]
+name = "c"
+args = ["hi"]
+"#,
+    );
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    let script = |name: &str, body: &str| {
+        let path = dir.join("tests").join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        Command::new("chmod").arg("+x").arg(&path).status().unwrap();
+    };
+    script("wrap", "exec \"$@\"");
+    script("fake-x", "echo wrong");
+    truefit_in(&dir, &["contract", "--real"]);
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(out["counts"].get("no-contract").is_none(), "{out:#}");
+    let tasks = out["tasks"].as_array().unwrap();
+    let kind = |k: &str| tasks.iter().find(|t| t["kind"] == k).unwrap().clone();
+    let differ = kind("differing-case");
+    assert_eq!(differ["files"][0], "tests/fake-x", "{differ:#}");
+    assert!(differ["steps"].as_str().unwrap().contains("`tests/fake-x`"));
+    // The real program is `real`'s word behind the same wrapper.
+    assert!(differ["summary"].as_str().unwrap().contains("unlike `echo`"));
+    let without = kind("standin-without-faults");
+    assert_eq!(without["files"][0], "tests/fake-x", "{without:#}");
+    assert_eq!(without["evidence"]["run"], "tests/fake-x");
+    let sha = without["evidence"]["sha256"].clone();
+    let toml = std::fs::read_to_string(dir.join("truefit.toml")).unwrap();
+    let marked = toml.replace(
+        "real = [\"tests/wrap\", \"echo\"]\n",
+        &format!("real = [\"tests/wrap\", \"echo\"]\nno_faults = {{ why = \"never fails\", sha256 = {sha} }}\n"),
+    );
+    std::fs::write(dir.join("truefit.toml"), marked).unwrap();
+    let count = |dir: &Path| {
+        let (_, out) = truefit_in(dir, &["next", "--all"]);
+        out["counts"]["standin-without-faults"]
+            .as_u64()
+            .unwrap_or(0)
+    };
+    assert_eq!(count(&dir), 0);
+    // Changing the wrapper is not changing the stand-in; changing the stand-in is.
+    script("wrap", "# another wrapper\nexec \"$@\"");
+    assert_eq!(count(&dir), 0);
+    script("fake-x", "echo \"$@\"");
+    assert_eq!(count(&dir), 1);
+}

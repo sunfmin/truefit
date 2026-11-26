@@ -86,6 +86,14 @@ ready = ["sh", "-c", "! curl -sm2 https://example.com"] # else this case is not 
 needs = "a host with no network"      #   with what it needs
 ```
 
+`run` may start with a wrapper (a script that runs the program it is given
+and prints only what the system reads of its answer): `run = ["tests/shape",
+"tests/fake-git"]`, `real = ["tests/shape", "git"]`. The stand-in is then the
+word of `run` naming a file under `[contract] standins` (else `run[0]`): that
+file is what the contract covers and what `no_faults` hashes. The real
+program is `real`'s word in the same place when `real` starts with the same
+wrapper (else `real[0]`).
+
 Both sides run each case in their own fresh directory. That directory's path
 becomes `<dir>` in their answers; then each `normalise` rule (a regex and its
 replacement) is applied to stdout, stderr and the files, on both sides alike.
