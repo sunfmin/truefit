@@ -10,6 +10,7 @@ mod kept;
 mod model;
 mod next;
 mod promise;
+mod prose;
 mod sim;
 
 use serde_json::json;
