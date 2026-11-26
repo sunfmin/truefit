@@ -2449,7 +2449,12 @@ args = ["hi"]
     assert_eq!(differ["files"][0], "tests/fake-x", "{differ:#}");
     assert!(differ["steps"].as_str().unwrap().contains("`tests/fake-x`"));
     // The real program is `real`'s word behind the same wrapper.
-    assert!(differ["summary"].as_str().unwrap().contains("unlike `echo`"));
+    assert!(
+        differ["summary"]
+            .as_str()
+            .unwrap()
+            .contains("unlike `echo`")
+    );
     let without = kind("standin-without-faults");
     assert_eq!(without["files"][0], "tests/fake-x", "{without:#}");
     assert_eq!(without["evidence"]["run"], "tests/fake-x");
@@ -2472,4 +2477,30 @@ args = ["hi"]
     assert_eq!(count(&dir), 0);
     script("fake-x", "echo \"$@\"");
     assert_eq!(count(&dir), 1);
+}
+
+#[test]
+fn a_stand_in_a_wrapper_runs_from_beside_itself_is_named_by_its_file_name() {
+    let dir = config(
+        "beside",
+        r#"[contract]
+standins = ["tests/fake-*"]
+[[standin]]
+name = "y"
+run = ["tests/wrap", "fake-y"]
+real = ["tests/wrap", "real-y"]
+"#,
+    );
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    for name in ["wrap", "fake-y"] {
+        let path = dir.join("tests").join(name);
+        std::fs::write(&path, "#!/bin/sh\nexec \"$(dirname \"$0\")/$@\"\n").unwrap();
+        Command::new("chmod").arg("+x").arg(&path).status().unwrap();
+    }
+    let (_, out) = truefit_in(&dir, &["next", "--all"]);
+    assert!(out["counts"].get("no-contract").is_none(), "{out:#}");
+    let task = &out["tasks"][0];
+    assert_eq!(task["kind"], "standin-without-faults", "{out:#}");
+    assert_eq!(task["files"][0], "tests/fake-y");
+    assert!(task["steps"].as_str().unwrap().contains("`real-y`"));
 }

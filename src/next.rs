@@ -24,7 +24,7 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
             let declared: Vec<PathBuf> = config
                 .standin
                 .iter()
-                .filter_map(|s| host::find(root, s.programs(root, globs).0)?.canonicalize().ok())
+                .filter_map(|s| host::find(root, &s.programs(root, globs).0)?.canonicalize().ok())
                 .collect();
             let mut found = Vec::new();
             for glob in globs {
@@ -48,10 +48,10 @@ pub fn run(root: &Path, all: bool) -> Result<Value, Vec<Value>> {
             today,
             config.contract.fresh_days,
         ));
-        tasks.extend(without_faults(root, s, programs, globs));
+        tasks.extend(without_faults(root, s, (&programs.0, programs.1), globs));
         let differ = host::read(root, &contract::differ_file(&s.name));
         if !differ.is_null() {
-            tasks.push(differing(s, programs, differ));
+            tasks.push(differing(s, (&programs.0, programs.1), differ));
         }
     }
     tasks.extend(crate::sim::tasks(root));

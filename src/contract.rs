@@ -367,26 +367,42 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
 }
 
 impl Standin {
-    /// The stand-in itself and the real program it stands in for. `run` may
-    /// start with a wrapper: the stand-in is its word naming a file under
-    /// `standins` (`[contract] standins`), else `run[0]`; the real program is
-    /// `real`'s word in the same place when `real` starts with the same
-    /// wrapper, else `real[0]`.
-    pub fn programs(&self, root: &Path, standins: &[String]) -> (&str, &str) {
+    /// The stand-in itself, as a path or `run[0]`'s word, and the real
+    /// program it stands in for. `run` may start with a wrapper: the stand-in
+    /// is its word naming a file under `standins` (`[contract] standins`), by
+    /// its path or, when one file there has that name, by its name alone (a
+    /// wrapper running it from beside itself); else `run[0]`. The real
+    /// program is `real`'s word in the same place when `real` starts with the
+    /// same wrapper, else `real[0]`.
+    pub fn programs(&self, root: &Path, standins: &[String]) -> (String, &str) {
         let canon = |w: &str| find(root, w)?.canonicalize().ok();
-        let under: Vec<_> = standins
+        let under: Vec<String> = standins
             .iter()
             .flat_map(|g| crate::next::expand(root, g))
-            .filter_map(|p| canon(&p))
             .collect();
-        let at = (self.run.iter())
-            .position(|w| canon(w).is_some_and(|p| under.contains(&p)))
-            .unwrap_or(0);
+        let named = |w: &str| {
+            if let Some(c) = canon(w).filter(|_| w.contains('/')) {
+                return under
+                    .iter()
+                    .any(|u| canon(u).as_ref() == Some(&c))
+                    .then(|| w.to_string());
+            }
+            let mut by_name = under
+                .iter()
+                .filter(|u| Path::new(u).file_name().is_some_and(|n| n == w));
+            match (by_name.next(), by_name.next()) {
+                (Some(u), None) => Some(u.clone()),
+                _ => None,
+            }
+        };
+        let (at, program) = (self.run.iter().enumerate())
+            .find_map(|(i, w)| Some((i, named(w)?)))
+            .unwrap_or((0, self.run[0].clone()));
         let real = match self.real.get(at) {
             Some(r) if self.real[..at] == self.run[..at] => r,
             _ => &self.real[0],
         };
-        (&self.run[at], real)
+        (program, real)
     }
 }
 
@@ -397,7 +413,7 @@ pub fn without_faults(
     s: &Standin,
     standins: &[String],
 ) -> Option<(&'static str, Option<String>)> {
-    let sha = find(root, s.programs(root, standins).0).and_then(|p| crate::model::sha256(&p));
+    let sha = find(root, &s.programs(root, standins).0).and_then(|p| crate::model::sha256(&p));
     let kept = s.no_faults.as_ref();
     if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
         return None;
