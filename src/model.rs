@@ -354,22 +354,12 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
         format!("model {}", m.name),
         Box::new(|| check(root, m, jar)),
     )];
-    for f in &accept {
-        jobs.push((
-            format!("trace {f}"),
-            trace_job(root, m, jar, f, Against::Next),
-        ));
-    }
-    for f in &reject {
-        jobs.push((
-            format!("trace {f}"),
-            trace_job(root, m, jar, f, Against::Next),
-        ));
-        jobs.push((
-            format!("trace {f}"),
-            trace_job(root, m, jar, f, Against::Invariants),
-        ));
-    }
+    let runs = (accept.iter().map(|f| (f, Against::Next)))
+        .chain((reject.iter()).flat_map(|f| [(f, Against::Next), (f, Against::Invariants)]));
+    jobs.extend(runs.map(|(f, against)| {
+        let job: Job<'_> = Box::new(move || check_trace(root, m, jar, f, against));
+        (format!("trace {f}"), job)
+    }));
     // One answer per job, in its place: TLC's, each accept trace's, then
     // each reject trace's pair.
     let mut answers = pooled(jobs, bound()).into_iter();
@@ -447,16 +437,6 @@ fn check_backed(root: &Path, m: &Model, jar: &Path) -> Result<Value, Vec<Value>>
 /// One check of a model's: TLC's, or a trace's.
 type Job<'e> = Box<dyn FnOnce() -> Result<Value, Vec<Value>> + Send + 'e>;
 
-fn trace_job<'e>(
-    root: &'e Path,
-    m: &'e Model,
-    jar: &'e Path,
-    file: &'e str,
-    against: Against,
-) -> Job<'e> {
-    Box::new(move || check_trace(root, m, jar, file, against))
-}
-
 /// How many checks (each its own JVM, with its own heap) run at once: four,
 /// or the host's CPUs when fewer. TLC's own check takes the longest (17-92 s
 /// on factorium's models, each trace's 0.6-1 s), so one slot runs it and three
@@ -499,10 +479,8 @@ fn pooled(jobs: Vec<(String, Job<'_>)>, bound: usize) -> Vec<Result<Value, Vec<V
 
 /// The fault of a check that panicked: what it checked, and the panic's message.
 fn panicked(what: &str, payload: &(dyn std::any::Any + Send)) -> Value {
-    let message = payload
-        .downcast_ref::<&str>()
-        .map(|s| s.to_string())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
+    let message = (payload.downcast_ref::<String>().map(String::as_str))
+        .or(payload.downcast_ref::<&str>().copied())
         .unwrap_or_default();
     fault(
         format!("the check of {what} panicked: {message}"),
