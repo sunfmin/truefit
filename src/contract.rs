@@ -7,33 +7,31 @@ use crate::host::{find, read, scratch, write};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
+use std::time::Duration;
 
 const PARTS: [&str; 4] = ["exit", "stdout", "stderr", "files"];
 
 /// `[contract]`: where the repo's stand-ins live, and how long a real run stays fresh.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Settings {
-    #[serde(default)]
     pub standins: Option<Vec<String>>,
-    #[serde(default = "default_fresh_days")]
     pub fresh_days: u64,
+    /// Seconds a `ready` or `version` command may take before it is killed.
+    pub fact_limit: u64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings {
             standins: None,
-            fresh_days: default_fresh_days(),
+            fresh_days: 30,
+            fact_limit: 10,
         }
     }
-}
-
-fn default_fresh_days() -> u64 {
-    30
 }
 
 #[derive(Deserialize)]
@@ -122,7 +120,8 @@ struct Answer {
 /// alone, or with `real` against the stand-ins and their real programs.
 /// Answers the report and whether every stand-in passed; `Err` is the faults.
 pub fn run(root: &Path, real: Option<Option<&str>>) -> Result<(Value, bool), Vec<Value>> {
-    let standins = load(root)?.standin;
+    let config = load(root)?;
+    let (standins, limit) = (config.standin, config.contract.fact_limit);
     let chosen: Vec<&Standin> = match real {
         Some(Some(name)) => match standins.iter().find(|s| s.name == name) {
             Some(s) => vec![s],
@@ -149,7 +148,7 @@ pub fn run(root: &Path, real: Option<Option<&str>>) -> Result<(Value, bool), Vec
             })
             .collect();
         let report = if real.is_some() {
-            check_real(root, s, &rules)
+            check_real(root, s, &rules, limit)
         } else {
             check_standin(root, s, &rules)
         };
@@ -273,7 +272,7 @@ fn check_standin(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) 
            "real_run": read(root, &record_file(&s.name))})
 }
 
-fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> Value {
+fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)], limit: u64) -> Value {
     let needs = if s.needs.is_empty() {
         format!("`{}` on PATH", s.real[0])
     } else {
@@ -284,16 +283,15 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     if find(root, &s.real[0]).is_none() {
         return not_run(format!("`{}` is not found here", s.real[0]));
     }
-    if !ready(root, &s.ready) {
-        return not_run(format!("`{}` did not succeed", s.ready.join(" ")));
+    if let Err(why) = ready(root, &s.ready, limit) {
+        return not_run(why);
     }
     let mut ok = true;
     let mut cases = Vec::new();
     let mut differing = Vec::new();
     let mut unrun = Vec::new();
     for c in &s.case {
-        if !ready(root, &c.ready) {
-            let why = format!("`{}` did not succeed", c.ready.join(" "));
+        if let Err(why) = ready(root, &c.ready, limit) {
             let needs = if c.needs.is_empty() {
                 why.clone()
             } else {
@@ -334,7 +332,8 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
         report["needs"] = unrun.join("; ").into();
         ok = false;
     }
-    let record = json!({"date": crate::date::today(), "version": version(root, s)});
+    let installed = version(root, s, limit);
+    let record = json!({"date": crate::date::today(), "version": installed.as_ref().ok()});
     // The last real run's differing cases, kept until a real run finds none.
     let differ = differ_file(&s.name);
     let mut written = if differing.is_empty() {
@@ -363,13 +362,61 @@ fn check_real(root: &Path, s: &Standin, rules: &[(regex_lite::Regex, &str)]) -> 
     if ok {
         report["real_run"] = record;
     }
+    if let Err(e) = installed {
+        report["version"] = e.into();
+    }
     report
 }
 
-/// Why every test through `s` can only succeed, with its stand-in's SHA-256
-/// now; None when it declares faults, or `no_faults` for it as it is now.
-pub fn without_faults(root: &Path, s: &Standin) -> Option<(&'static str, Option<String>)> {
-    let sha = find(root, &s.run[0]).and_then(|p| crate::model::sha256(&p));
+impl Standin {
+    /// The stand-in itself, as a path or `run[0]`'s word, and the real
+    /// program it stands in for. `run` may start with a wrapper: the stand-in
+    /// is its word naming a file under `standins` (`[contract] standins`), by
+    /// its path or, when one file there has that name, by its name alone (a
+    /// wrapper running it from beside itself); else `run[0]`. The real
+    /// program is `real`'s word in the same place when `real` starts with the
+    /// same wrapper, else `real[0]`.
+    pub fn programs(&self, root: &Path, standins: &[String]) -> (String, &str) {
+        let canon = |w: &str| find(root, w)?.canonicalize().ok();
+        let under: Vec<String> = standins
+            .iter()
+            .flat_map(|g| crate::next::expand(root, g))
+            .collect();
+        let named = |w: &str| {
+            if let Some(c) = canon(w).filter(|_| w.contains('/')) {
+                return under
+                    .iter()
+                    .any(|u| canon(u).as_ref() == Some(&c))
+                    .then(|| w.to_string());
+            }
+            let mut by_name = under
+                .iter()
+                .filter(|u| Path::new(u).file_name().is_some_and(|n| n == w));
+            match (by_name.next(), by_name.next()) {
+                (Some(u), None) => Some(u.clone()),
+                _ => None,
+            }
+        };
+        let (at, program) = (self.run.iter().enumerate())
+            .find_map(|(i, w)| Some((i, named(w)?)))
+            .unwrap_or((0, self.run[0].clone()));
+        let real = match self.real.get(at) {
+            Some(r) if self.real[..at] == self.run[..at] => r,
+            _ => &self.real[0],
+        };
+        (program, real)
+    }
+}
+
+/// Why every test through `s` can only succeed, with its stand-in's
+/// (`program`'s) SHA-256 now; None when it declares faults, or `no_faults`
+/// for it as it is now.
+pub fn without_faults(
+    root: &Path,
+    s: &Standin,
+    program: &str,
+) -> Option<(&'static str, Option<String>)> {
+    let sha = find(root, program).and_then(|p| crate::model::sha256(&p));
     let kept = s.no_faults.as_ref();
     if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
         return None;
@@ -392,19 +439,17 @@ pub fn differ_file(name: &str) -> String {
     format!(".truefit/{name}.differ.json")
 }
 
-/// The first line its `version` command prints here, or None: none declared, or it cannot run.
-pub fn version(root: &Path, s: &Standin) -> Option<String> {
-    (!s.version.is_empty())
-        .then(|| quiet(root, &s.version))
-        .flatten()
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string()
-        })
+/// The first line its `version` command prints here, or None: none declared,
+/// or it cannot run; Err when it ran past `limit` seconds.
+pub fn version(root: &Path, s: &Standin, limit: u64) -> Result<Option<String>, String> {
+    Ok(quiet(root, &s.version, limit)?.map(|(_, out)| {
+        String::from_utf8_lossy(&out)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    }))
 }
 
 fn differ(compare: &[String], a: &Answer, b: &Answer) -> Vec<String> {
@@ -420,18 +465,59 @@ fn differ(compare: &[String], a: &Answer, b: &Answer) -> Vec<String> {
         .collect()
 }
 
-/// Whether `argv` is empty or succeeds here: a real run (or one case of it) may go ahead.
-fn ready(root: &Path, argv: &[String]) -> bool {
-    argv.is_empty() || matches!(quiet(root, argv), Some(o) if o.status.success())
+/// Whether `argv` is empty or succeeds here within `limit` seconds: a real
+/// run (or one case of it) may go ahead; else why not.
+fn ready(root: &Path, argv: &[String], limit: u64) -> Result<(), String> {
+    match quiet(root, argv, limit)? {
+        _ if argv.is_empty() => Ok(()),
+        Some((status, _)) if status.success() => Ok(()),
+        _ => Err(format!("`{}` did not succeed", argv.join(" "))),
+    }
 }
 
-fn quiet(root: &Path, argv: &[String]) -> Option<std::process::Output> {
-    Command::new(find(root, &argv[0])?)
-        .args(&argv[1..])
-        .current_dir(root)
-        .stdin(Stdio::null())
-        .output()
-        .ok()
+/// The exit status and stdout of `argv`, run in `root` to read a fact, or
+/// None: it cannot run. Past `limit` seconds it is killed with every process
+/// it started, and Err names it: a hung tool never hangs truefit.
+fn quiet(
+    root: &Path,
+    argv: &[String],
+    limit: u64,
+) -> Result<Option<(ExitStatus, Vec<u8>)>, String> {
+    let spawned = argv.first().and_then(|p| find(root, p)).and_then(|p| {
+        let mut command = Command::new(p);
+        command
+            .args(&argv[1..])
+            .current_dir(root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        // Its own process group, so a kill reaches the children it started too.
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        command.spawn().ok()
+    });
+    let Some(mut child) = spawned else {
+        return Ok(None);
+    };
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    // Its stdout closes once it and every child holding it are done.
+    std::thread::spawn(move || {
+        let mut out = Vec::new();
+        let _ = child.stdout.take().unwrap().read_to_end(&mut out);
+        let _ = tx.send(child.wait().map(|status| (status, out)));
+    });
+    match rx.recv_timeout(Duration::from_secs(limit)) {
+        Ok(done) => Ok(done.ok()),
+        Err(_) => {
+            // SAFETY: kill(2) on the process group it leads; it touches no memory.
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+            Err(format!("`{}` timed out after {limit} s", argv.join(" ")))
+        }
+    }
 }
 
 /// Runs `prefix` + the case's args in a fresh directory holding a copy of the

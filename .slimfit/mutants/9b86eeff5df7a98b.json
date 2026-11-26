@@ -1,0 +1,27 @@
+{
+  "tree": "fd7bce40f449c25b3d35ce84cd9c8e31300ae8c5+d1fba762150c532c",
+  "picker": "codex:01a2160a-05df-7691-9ed9-dbb3d853e873:default",
+  "author": "claude-code:c17ad4a3-aa55-597f-ab62-f37fb65a4b75:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/contract.rs:402:24: replace match guard self.real[..at] == self.run[..at] with true in Standin::programs",
+        "why": "Both wrapper tests use matching prefixes, leaving the fallback to real[0] untested when the wrappers differ.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/promise.rs:200:38: replace == with != in status",
+        "why": "The wrapper tests never check whether promise status uses the named stand-in when another stand-in has a different fault declaration.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/promise.rs:197:17: delete match arm \"contract\" in status",
+        "why": "The new tests check fault reporting through next, so they would still pass if promise status stopped reporting missing fault coverage for contracts.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  }
+}
