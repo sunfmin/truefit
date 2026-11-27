@@ -1,0 +1,7 @@
+{
+  "tree": "f0dc863d5479139528d1e28a0992723b2ccb610e+d1fba762150c532c",
+  "picker": "codex:01a21ac7-0a33-79e1-993d-3f20fdfd4fcd:default",
+  "author": "claude-code:c14b389c-9c3a-5871-a878-8516f8ab4a11:opus",
+  "none": "Every listed mutant removes the real fixed-often task, which the CLI test explicitly expects after a new fix.",
+  "added_lines": 5
+}

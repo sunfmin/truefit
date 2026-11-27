@@ -106,8 +106,8 @@ fn fixed_often(root: &Path, config: &Config) -> Option<Vec<Value>> {
     )?;
     let titles = titles(root);
     let covered = covered(root, config);
-    // Each file: its newest commit, and each fix commit with the fix it serves.
-    let mut files: BTreeMap<String, (String, Vec<Value>)> = BTreeMap::new();
+    // Each file: each fix commit with the fix it serves, newest first.
+    let mut files: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for commit in log.split('\x1e').skip(1) {
         let mut parts = commit.splitn(3, '\x1f');
         let (sha, message, names) = (parts.next()?, parts.next()?, parts.next()?);
@@ -120,27 +120,29 @@ fn fixed_often(root: &Path, config: &Config) -> Option<Vec<Value>> {
                 .find(|i| titles.get(i).is_some_and(|t| has_any(t, FIX))),
         };
         for file in names.lines().filter(|f| !f.is_empty()) {
-            let (_, fixes) = files.entry(file.into()).or_insert((sha.into(), vec![]));
+            let fixes = files.entry(file.into()).or_default();
             if let Some(fix) = &fix {
                 fixes.push(json!({"commit": sha, "subject": subject, "fix": fix}));
             }
         }
     }
     let mut tasks: Vec<(usize, Value)> = Vec::new();
-    for (file, (newest, commits)) in files {
+    for (file, commits) in files {
         let fixes: BTreeSet<&str> = commits.iter().filter_map(|c| c["fix"].as_str()).collect();
         let n = fixes.len();
         let is_covered = covered.iter().any(|c| c.trim_start_matches("./") == file);
         if n < 2 || !code(&file) || !root.join(&file).is_file() || is_covered {
             continue;
         }
+        // Keyed by the newest fix: only a new fix is new evidence for a mark.
+        let newest = commits[0]["commit"].as_str().unwrap_or("");
         let hash = hash(&format!("fixed-often {file} {newest}"));
         tasks.push((n, json!({
             "kind": "fixed-often",
             "summary": format!("{file} was changed by {n} fixes in {days} days, and no registered promise's check covers it"),
             "files": [file, CONFIG],
             "evidence": {"file": file, "fixes": n, "commits": commits, "history_days": days, "hash": hash},
-            "steps": format!("Read each fix's commits (`git show <commit>`) where they change {file}: what did the fixes make the system keep that it broke before (an order of steps, at most once, a state it must never reach)? When they keep a promise, find the sentence that makes it (SPEC, README, ADRs; write one where none does) and register it as a [[promise]] in {CONFIG}, its checks from the ladder (`truefit --help`), and tie the check to this file: a `model`'s `covers` naming the functions it stands for, or `[sim] code` holding the file. When the fixes keep no promise (unrelated slips, a build, a message), or the promise's check is a `test` or `contract` (whose code truefit cannot see), mark it: `truefit promise --mark {hash} not --why \"<why: the promise it is, or why none>\"`; it is asked again when new commits change {file}. Commit {CONFIG} and {MARKS}."),
+            "steps": format!("Read each fix's commits (`git show <commit>`) where they change {file}: what did the fixes make the system keep that it broke before (an order of steps, at most once, a state it must never reach)? When they keep a promise, find the sentence that makes it (SPEC, README, ADRs; write one where none does) and register it as a [[promise]] in {CONFIG}, its checks from the ladder (`truefit --help`), and tie the check to this file: a `model`'s `covers` naming the functions it stands for, or `[sim] code` holding the file. When the fixes keep no promise (unrelated slips, a build, a message), or the promise's check is a `test` or `contract` (whose code truefit cannot see), mark it: `truefit promise --mark {hash} not --why \"<why: the promise it is, or why none>\"`; it is asked again when a new fix changes {file}. Commit {CONFIG} and {MARKS}."),
             "accept": "truefit promise",
         })));
     }
