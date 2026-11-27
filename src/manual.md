@@ -433,7 +433,8 @@ one", "within N seconds"); one no check keeps can break unseen.
   the sentence's hash, so one marked is not asked again; a sentence that
   changes has a new hash and is asked again. Commit it. A `fixed-often` or
   `failing-seed-promise` task of `truefit next` is marked by its evidence's
-  `hash`, only `not`, and with its `--why`.
+  `hash`, only `not`, and with its `--why`; a `fixed-often` one is asked
+  again when a new fix changes its file.
 
 It exits 0 when every promise is checked or kept (to an end not yet
 passed, or forever) and every candidate is marked and, if a promise,
@@ -565,8 +566,8 @@ compares models' coverage with git, never running TLC.
   JSON, lockfiles and text. `evidence`: each fix's `commits` with their
   subjects. Find the promise the fixes were keeping, register it, and tie
   its check to the file; or mark the task `not` with why. It is asked
-  again when a new commit changes the file. Outside a git repo it is not
-  looked for, and `notes` says so.
+  again when a new fix changes the file, not on a commit that is no fix.
+  Outside a git repo it is not looked for, and `notes` says so.
 - `failing-seed-promise`: a kept failing seed whose failed invariant no
   registered promise names: register the promise it breaks (or name the
   invariant as the registered one), so the seed's fix is tied to it; or

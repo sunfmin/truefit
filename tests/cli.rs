@@ -2016,7 +2016,8 @@ fn a_file_fixed_twice_is_owed_a_promise_until_a_check_covers_it_or_it_is_marked_
     assert!(marks.contains("two slips, no promise"), "{marks}");
     let (_, out) = truefit_in(&dir, &["next"]);
     assert_eq!(out["task"], Value::Null, "{out:#}");
-    // A new commit to the file asks again; a promise whose check covers it answers.
+    // A commit that is no fix asks nothing; a new fix asks again; a promise
+    // whose check covers it answers.
     std::fs::write(dir.join("ledger.awk"), "{ charged[$1] += $2 }\n").unwrap();
     let git = |args: &[&str]| {
         let ok = Command::new("git")
@@ -2028,6 +2029,10 @@ fn a_file_fixed_twice_is_owed_a_promise_until_a_check_covers_it_or_it_is_marked_
         assert!(ok.success());
     };
     git(&["commit", "-qam", "Simpler"]);
+    let (_, out) = truefit_in(&dir, &["next"]);
+    assert_eq!(out["task"], Value::Null, "{out:#}");
+    std::fs::write(dir.join("ledger.awk"), "{ charged[$1] += $2 + 0 }\n").unwrap();
+    git(&["commit", "-qam", "Fix a blank amount"]);
     let (_, out) = truefit_in(&dir, &["next"]);
     assert_eq!(out["task"]["kind"], "fixed-often", "{out:#}");
     assert_ne!(out["task"]["evidence"]["hash"], hash.as_str());
