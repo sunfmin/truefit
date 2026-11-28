@@ -6,6 +6,7 @@
 - **Real run**: a contract's cases run against the real program, outside any gate. Its date is the contract's freshness.
 - **Simulation**: the system's own code run step by step against stand-ins, its order of events and faults chosen from a **seed**; a failing seed reruns exactly.
 - **Model**: a specification of the system's design (TLA+), checked by a model checker within bounds.
+- **TLC**: the model checker truefit pins (release and checksum) and runs on a model or a trace. What is TLC's own, its install, its JVM, its config, its output and TLA+'s values, is `src/tlc.rs`; what a model means to truefit (backing a promise, coverage, traces) is `src/model.rs`.
 - **Trace**: what a real or simulated run recorded, checked as a behaviour of the model.
 - **Coverage record**: which code each of a model's actions stands for (file and function), and the commit at which the model was last confirmed to describe it. Code changed since makes the model stale.
 - **Invariant**: a property every state must hold; one home, used by the model, the simulation and the code's own checks.

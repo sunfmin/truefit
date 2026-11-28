@@ -20,9 +20,6 @@
   "src/kept.rs": {
     "local_refs": 1
   },
-  "src/model.rs": {
-    "local_refs": 1
-  },
   "tests/cli.rs": {
     "local_refs": 8
   },
