@@ -12,6 +12,7 @@ mod next;
 mod promise;
 mod prose;
 mod sim;
+mod tlc;
 
 use serde_json::json;
 use std::process::ExitCode;

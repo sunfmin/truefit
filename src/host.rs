@@ -66,3 +66,15 @@ pub fn scratch() -> Result<PathBuf, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     Ok(dir)
 }
+
+/// The SHA-256 of the file at `path`, in hex, or None: it cannot be read.
+pub fn sha256(path: &Path) -> Option<String> {
+    Some(digest(&std::fs::read(path).ok()?))
+}
+
+/// The SHA-256 of `bytes`, in hex.
+pub fn digest(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(bytes);
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
