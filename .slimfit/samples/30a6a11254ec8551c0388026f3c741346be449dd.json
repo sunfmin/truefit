@@ -1,0 +1,29 @@
+{
+  "tip": "30a6a11254ec8551c0388026f3c741346be449dd",
+  "from": "d03d174e190067605afce169f0905c02f18661dd",
+  "pool": 97,
+  "drawn": {
+    "rust": [
+      {
+        "name": "src/next.rs:126:5: replace stale -> Option<Value> with Some(Default::default())",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/prose.rs:28:35: replace + with - in split",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/prose.rs:76:17: replace && with || in sentences_of",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:66:5: replace default_heap -> u64 with 0",
+        "outcome": "killed"
+      },
+      {
+        "name": "src/prose.rs:124:5: replace plain -> String with String::new()",
+        "outcome": "killed"
+      }
+    ]
+  }
+}
