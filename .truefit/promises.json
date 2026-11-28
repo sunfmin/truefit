@@ -129,6 +129,12 @@
     "sentence": "The manual is `truefit --help`, and it is the only copy.",
     "source": "README.md:11"
   },
+  "fa328fbf2478": {
+    "kind": "fixed-often",
+    "mark": "not",
+    "summary": "src/model.rs was changed by 3 fixes in 180 days, and no registered promise's check covers it",
+    "why": "the fixes to src/model.rs added truefit's own features (unreached: a model check is reached only when its config checks the invariant, the registered promise reached-only-when-named; files: a model's covered files) and refactors (KEYWORDS shared, contract::git, files as an iterator), plus a unit test that a TLC run that cannot start is the java fault with its fix; the promises they keep are checked by tests (tests/cli.rs, src/model.rs mod tests), which truefit cannot see"
+  },
   "fa61f89820d9": {
     "kind": "fixed-often",
     "mark": "not",
