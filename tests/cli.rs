@@ -1478,6 +1478,21 @@ fn tlc_installs_from_its_source_and_a_missing_home_curl_source_or_java_is_a_faul
         fault(Some(&home), &bin, &home.join("none.jar")),
         ": curl exit status",
     );
+    // A transfer cut off midway (curl 18) is curl's failure, not a checksum's, and leaves no part.
+    let cut = home.join("cut");
+    std::fs::create_dir_all(&cut).unwrap();
+    let partial = cut.join("curl");
+    std::fs::write(&partial, "#!/bin/sh\nprintf partial > \"$5\"\nexit 18\n").unwrap();
+    std::fs::set_permissions(
+        &partial,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let fault_cut = fault(Some(&home), &cut, &pinned);
+    assert!(
+        fault_cut.ends_with(": curl exit status: 18") && !fault_cut.contains("SHA-256"),
+        "{fault_cut}"
+    );
     assert_eq!(std::fs::read_dir(&tlc).unwrap().count(), 0);
     // Installed from its source; then there is no java to run it on.
     says(fault(Some(&home), &bin, &pinned), "cannot run TLC (java)");
