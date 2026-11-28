@@ -343,6 +343,8 @@ mod tests {
             value(&v),
             r#"[a |-> <<1, -2>>, b |-> TRUE, c |-> "x\"y", f |-> "1.5", g |-> "null", h |-> <<>>]"#
         );
+        // TLA+ escapes a backslash, a newline and a tab; other control characters are dropped.
+        assert_eq!(value(&json!("a\\b\n\t\u{7}c")), r#""a\\b\n\tc""#);
     }
 
     #[test]
