@@ -1,117 +1,106 @@
 {
+  "suites": {
+    "rust": {
+      "prod_lines": 3279,
+      "test_lines": 2789,
+      "tests": 70,
+      "failures": 0,
+      "test_seconds": 0.012,
+      "covered_lines": 2589,
+      "uncovered_lines": 0
+    }
+  },
+  "loosened": [],
   "kept": [
     {
+      "suite": "rust",
+      "test": "truefit::cli::sim_catches_a_nondeterministic_simulation_at_the_first_step_that_differs",
       "hash": "bacaddf74c2424da",
-      "reason": "Swaps in ./sim-nondeterministic; folding it into the deterministic sim test changes the kept seeds and next counts that test checks.",
-      "suite": "rust",
-      "test": "truefit::cli::sim_catches_a_nondeterministic_simulation_at_the_first_step_that_differs"
+      "reason": "Swaps in ./sim-nondeterministic; folding it into the deterministic sim test changes the kept seeds and next counts that test checks."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::sim_finds_the_sample_bug_keeps_its_seed_and_reruns_it_step_for_step",
       "hash": "4ca7a398f72f40b5",
-      "reason": "Its seed/rerun/forget assertions are not in the promise test, which renames the promise and marks it; folding those in changes the toml and the next counts this test checks.",
-      "suite": "rust",
-      "test": "truefit::cli::sim_finds_the_sample_bug_keeps_its_seed_and_reruns_it_step_for_step"
+      "reason": "Its seed/rerun/forget assertions are not in the promise test, which renames the promise and marks it; folding those in changes the toml and the next counts this test checks."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::next_gives_each_kind_of_task_once_on_the_sample_with_its_evidence",
       "hash": "148be1be9085bf16",
-      "reason": "The plutil sample with its four task kinds; the fresh-ties test is its own echo config whose whole point is no task, so the setups conflict.",
-      "suite": "rust",
-      "test": "truefit::cli::next_gives_each_kind_of_task_once_on_the_sample_with_its_evidence"
+      "reason": "The plutil sample with its four task kinds; the fresh-ties test is its own echo config whose whole point is no task, so the setups conflict."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::a_fault_case_the_real_program_cannot_produce_here_is_not_run_with_what_it_needs",
       "hash": "16c674a58a78bc8b",
-      "reason": "Its own truefit.toml (an unreachable fault case); the unwritable-record test makes .truefit a file, which would break this one's record checks.",
-      "suite": "rust",
-      "test": "truefit::cli::a_fault_case_the_real_program_cannot_produce_here_is_not_run_with_what_it_needs"
+      "reason": "Its own truefit.toml (an unreachable fault case); the unwritable-record test makes .truefit a file, which would break this one's record checks."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::a_case_dir_is_copied_whole_and_one_missing_cannot_run",
       "hash": "34646b590547daea",
-      "reason": "Its own truefit.toml (case dirs, a non-executable stand-in); merging configs shifts stand-in indices and the cannot-run test's next message.",
-      "suite": "rust",
-      "test": "truefit::cli::a_case_dir_is_copied_whole_and_one_missing_cannot_run"
+      "reason": "Its own truefit.toml (case dirs, a non-executable stand-in); merging configs shifts stand-in indices and the cannot-run test's next message."
     },
     {
+      "suite": "rust",
+      "test": "truefit::bin/truefit::promise::tests::words_match_whole_and_in_any_case",
       "hash": "37d98e422611b2ee",
-      "reason": "Its 10 has_any cases (whole-word English, any case, hyphen-joined words, CJK substring matches and non-matches) and 2 same_name asserts are checked by no other test; the other_test only runs this code on the way to a stale-model task and asserts none of these outcomes. A merge would fold a pure table into a git-repo integration test in another crate target, hiding which behaviour failed.",
-      "suite": "rust",
-      "test": "truefit::bin/truefit::promise::tests::words_match_whole_and_in_any_case"
+      "reason": "Its 10 has_any cases (whole-word English, any case, hyphen-joined words, CJK substring matches and non-matches) and 2 same_name asserts are checked by no other test; the other_test only runs this code on the way to a stale-model task and asserts none of these outcomes. A merge would fold a pure table into a git-repo integration test in another crate target, hiding which behaviour failed."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time",
       "hash": "db16931f376eb1f1",
-      "reason": "Its assertions (at most the bound of JVMs alive at once, more than one at once, bound+4 runs, answers in trace order) have no counterpart in the other test, and they need a stand-in java on PATH that logs liveness; the other test checks the real pinned TLC (temp dir isolation, real states/depth, broken spec), so folding the stand-in in would change what it checks.",
-      "suite": "rust",
-      "test": "truefit::cli::a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time"
+      "reason": "Its assertions (at most the bound of JVMs alive at once, more than one at once, bound+4 runs, answers in trace order) have no counterpart in the other test, and they need a stand-in java on PATH that logs liveness; the other test checks the real pinned TLC (temp dir isolation, real states/depth, broken spec), so folding the stand-in in would change what it checks."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::a_model_past_its_limit_is_timed_out",
       "hash": "fb744cd455104c14",
-      "reason": "Its assertions (exit 1, result 'timed out', output string, killed under 10s, next names smaller bounds) check a TLC run killed at its limit on its own Count spec; the symmetry test checks a passing run's state count. Setups conflict: one model cannot both time out and pass.",
-      "suite": "rust",
-      "test": "truefit::cli::a_model_past_its_limit_is_timed_out"
+      "reason": "Its assertions (exit 1, result 'timed out', output string, killed under 10s, next names smaller bounds) check a TLC run killed at its limit on its own Count spec; the symmetry test checks a passing run's state count. Setups conflict: one model cannot both time out and pass."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::model_states_are_tlcs_distinct_states_under_symmetry",
       "hash": "51c44efc4797e13d",
-      "reason": "It asserts states 2002 and depth 46 under SYMMETRY and seconds > 0 on the symmetry sample; the pinned-TLC test checks the queue sample (7 states, traces, temp dir). No assertion maps; the two samples are different models, so a merge pays both TLC runs anyway and would hide which behaviour failed.",
-      "suite": "rust",
-      "test": "truefit::cli::model_states_are_tlcs_distinct_states_under_symmetry"
+      "reason": "It asserts states 2002 and depth 46 under SYMMETRY and seconds > 0 on the symmetry sample; the pinned-TLC test checks the queue sample (7 states, traces, temp dir). No assertion maps; the two samples are different models, so a merge pays both TLC runs anyway and would hide which behaviour failed."
     },
     {
+      "suite": "rust",
+      "test": "truefit::cli::a_stand_in_without_faults_is_asked_for_them_until_marked_and_again_once_it_changes",
       "hash": "62f705441eb481bc",
-      "reason": "Its assertions (only plutil-wrong asked since plutil declares faults, files with truefit.toml, accept command, 64-char sha, a changed stand-in re-asked with 'changed since' and the kept why) are on the plutil sample; the beside-wrapper test checks the steps naming the real program behind a wrapper. None maps; setups (sample vs config) conflict.",
-      "suite": "rust",
-      "test": "truefit::cli::a_stand_in_without_faults_is_asked_for_them_until_marked_and_again_once_it_changes"
+      "reason": "Its assertions (only plutil-wrong asked since plutil declares faults, files with truefit.toml, accept command, 64-char sha, a changed stand-in re-asked with 'changed since' and the kept why) are on the plutil sample; the beside-wrapper test checks the steps naming the real program behind a wrapper. None maps; setups (sample vs config) conflict."
     },
     {
-      "hash": "4a91fd8585a82274",
-      "reason": "Its assertions (globbed standins incl. a missing dir, differing-case counted then cleared with its .differ.json removed, a 30-day-old pass still fresh, empty tasks, the 'in no git repo' note, next 'nothing', null task) are not in the wrapper test, which checks wrapper/run-word attribution. Folding the fresh date and globs into it changes what it checks.",
       "suite": "rust",
-      "test": "truefit::cli::next_gives_nothing_once_every_tie_is_fresh"
+      "test": "truefit::cli::next_gives_nothing_once_every_tie_is_fresh",
+      "hash": "4a91fd8585a82274",
+      "reason": "Its assertions (globbed standins incl. a missing dir, differing-case counted then cleared with its .differ.json removed, a 30-day-old pass still fresh, empty tasks, the 'in no git repo' note, next 'nothing', null task) are not in the wrapper test, which checks wrapper/run-word attribution. Folding the fresh date and globs into it changes what it checks."
     }
   ],
   "kept_files": [
     {
-      "commits_90d": 11,
-      "commits_total": 11,
+      "suite": "rust",
       "file": "src/model.rs",
       "prod_lines": 896,
-      "reason": "Deep already: ~10 public items (Model, faults, run, unbacked, unreached, files, tasks, TRACES, TLC_VERSION, sha256) front ~900 lines of pinned TLC install, run under a limit, parallel accept/reject trace checks, generated trace modules and TLC output reading; callers (main, contract, promise, next, history) each use one or two. Tests cross the CLI against real TLC; unit tests only hit pure internal seams (TLC output, TLA+ values, config sections). Splitting TLC output/trace generation into modules would spread one concept, not deepen it. Removed one stale doc line.",
-      "suite": "rust"
+      "commits_90d": 11,
+      "commits_total": 11,
+      "reason": "Deep already: ~10 public items (Model, faults, run, unbacked, unreached, files, tasks, TRACES, TLC_VERSION, sha256) front ~900 lines of pinned TLC install, run under a limit, parallel accept/reject trace checks, generated trace modules and TLC output reading; callers (main, contract, promise, next, history) each use one or two. Tests cross the CLI against real TLC; unit tests only hit pure internal seams (TLC output, TLA+ values, config sections). Splitting TLC output/trace generation into modules would spread one concept, not deepen it. Removed one stale doc line."
     },
     {
-      "commits_90d": 17,
-      "commits_total": 17,
+      "suite": "rust",
       "file": "src/contract.rs",
       "prod_lines": 464,
-      "reason": "Deep enough: callers see run (the whole contract check, real or stand-in only), faults (config validation), without_faults, version and the two record paths; behind them sit case dirs, process spawning, fault env, normalisation, comparison and the .truefit record/differ writes. Unit tests stay on internal seams (normalise, differ). The 90-day churn is features (faults, ready/needs, no_faults) plus truefit#32's move of config, host and date out of it; no pass-through or shallow piece is left to move.",
-      "suite": "rust"
+      "commits_90d": 17,
+      "commits_total": 17,
+      "reason": "Deep enough: callers see run (the whole contract check, real or stand-in only), faults (config validation), without_faults, version and the two record paths; behind them sit case dirs, process spawning, fault env, normalisation, comparison and the .truefit record/differ writes. Unit tests stay on internal seams (normalise, differ). The 90-day churn is features (faults, ready/needs, no_faults) plus truefit#32's move of config, host and date out of it; no pass-through or shallow piece is left to move."
     }
   ],
-  "kept_spans": [
-    {
-      "end": 792,
-      "file": "src/model.rs",
-      "function": "check_trace (closure)",
-      "hash": "63299962de7a9e30",
-      "reason": "The fault for a failed write of the trace's module into the scratch directory check_trace just made: only the host fails it (disk full, temp dir removed mid-run); no fast test can make a fresh directory unwritable without injecting the filesystem, and dropping the fault would leave a panic or a lost error.",
-      "start": 788,
-      "suite": "rust"
-    }
-  ],
-  "loosened": [],
   "measured": {
     "rust": {
-      "test_seconds": 23.834,
-      "uncovered_lines": 11
-    }
-  },
-  "suites": {
-    "rust": {
-      "covered_lines": 2583,
-      "failures": 0,
-      "prod_lines": 3267,
-      "test_lines": 2764,
-      "test_seconds": 0.012,
-      "tests": 69,
-      "uncovered_lines": 0
+      "uncovered_lines": 10,
+      "test_seconds": 23.999
     }
   }
 }

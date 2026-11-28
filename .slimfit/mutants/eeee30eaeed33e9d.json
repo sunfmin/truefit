@@ -1,0 +1,40 @@
+{
+  "tree": "8526cd7f6db1e33025fec2b9ef51632546f17e1a+d1fba762150c532c",
+  "picker": "codex:01a22077-2864-7fc2-a0d2-fc8330679869:default",
+  "author": "claude-code:0049b2a1-2852-5903-97ad-857687e6c50a:opus",
+  "picks": {
+    "rust": [
+      {
+        "name": "src/host.rs:72:5: replace sha256 -> Option<String> with None",
+        "why": "Returning None for a readable file makes TLC miss a valid cached jar and prevents a matching digest from honoring a stand-in’s no-fault record.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/model.rs:461:32: replace || with && in check",
+        "why": "A test that checks the broken or timed-out verdict can still pass when the report drops the corresponding TLC output.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/tlc.rs:52:24: replace match guard got.success() with true in install",
+        "why": "A failed curl can leave a readable partial download, and this guard determines whether the fault reports the transfer failure or a checksum mismatch.",
+        "outcome": "killed",
+        "first_outcome": "survived"
+      },
+      {
+        "name": "src/tlc.rs:138:28: replace > with == in run",
+        "why": "The polling loop can step past the deadline without ever hitting equality, while a Java process that exits promptly exercises neither condition.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      },
+      {
+        "name": "src/tlc.rs:151:66: replace / with * in run",
+        "why": "The reported elapsed time becomes 10,000 times too large after rounding, which assertions on the verdict and state counts can miss.",
+        "outcome": "killed",
+        "first_outcome": "killed"
+      }
+    ]
+  },
+  "added_lines": 399
+}
