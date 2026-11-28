@@ -53,6 +53,15 @@
       "test": "truefit::cli::a_models_checks_run_at_most_the_bound_at_once_and_answer_as_one_at_a_time",
       "hash": "db16931f376eb1f1",
       "reason": "Its assertions (at most the bound of JVMs alive at once, more than one at once, bound+4 runs, answers in trace order) have no counterpart in the other test, and they need a stand-in java on PATH that logs liveness; the other test checks the real pinned TLC (temp dir isolation, real states/depth, broken spec), so folding the stand-in in would change what it checks."
+    },
+    {
+      "suite": "rust",
+      "test": "truefit::cli::model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_dir_and_names_a_broken_property",
+      "kind": "slow-test",
+      "hash": "bc02ab285561d95f",
+      "seconds": 5.473000000000001,
+      "suite_seconds": 23.106,
+      "reason": "its time is 16 real TLC runs (JVMs): two truefit model runs at once against the real TLC temp-dir race (truefit#15), then a real counterexample and a real parse failure; each already C1-only and loading TLC's classes from a shared CDS archive (6.10s -> 5.47s, truefit#60)"
     }
   ],
   "kept_files": [
