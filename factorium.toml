@@ -5,7 +5,10 @@ fast = "./gate.sh"
 fast_limit = 600
 slow = "./gate.sh"
 slow_limit = 600
-regenerated = [".docfit/baseline.json"]
+# What a landing's gate rewrites: a landing whose only conflicts are these
+# takes proving's copy and lands as its gate left it (factorium SPEC §1.12).
+# slimfit's baseline only `slimfit ratchet` writes, so it lands as proving's.
+regenerated = [".slimfit/baseline.json", ".docfit/baseline.json"]
 
 # A cut (ADR 0003): packaging/release.sh builds the tag's version, pushes the
 # tag and runs the tap sunfmin/homebrew-tap's release workflow, which signs,
