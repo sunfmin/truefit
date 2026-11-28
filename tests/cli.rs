@@ -1444,12 +1444,14 @@ fn tlc_installs_from_its_source_and_a_missing_home_curl_source_or_java_is_a_faul
         bin.join("curl"),
     )
     .unwrap();
-    let fault = |home: Option<&Path>, path: &Path, from: &Path| {
+    // `from` None: no TRUEFIT_TLC_FROM, so the official release.
+    let fault_from = |home: Option<&Path>, path: &Path, from: Option<&Path>| {
         let mut c = Command::new(env!("CARGO_BIN_EXE_truefit"));
-        c.arg("model")
-            .current_dir(&dir)
-            .env("PATH", path)
-            .env("TRUEFIT_TLC_FROM", format!("file://{}", from.display()));
+        c.arg("model").current_dir(&dir).env("PATH", path);
+        match from {
+            Some(f) => c.env("TRUEFIT_TLC_FROM", format!("file://{}", f.display())),
+            None => c.env_remove("TRUEFIT_TLC_FROM"),
+        };
         match home {
             Some(h) => c.env("HOME", h),
             None => c.env_remove("HOME"),
@@ -1460,6 +1462,7 @@ fn tlc_installs_from_its_source_and_a_missing_home_curl_source_or_java_is_a_faul
         assert!(out["error"][0]["fix"].is_string(), "{out:#}");
         out["error"][0]["fault"].as_str().unwrap().to_string()
     };
+    let fault = |home: Option<&Path>, path: &Path, from: &Path| fault_from(home, path, Some(from));
     let says = |fault: String, what: &str| assert!(fault.contains(what), "{fault}");
     says(fault(None, &bin, &pinned), "HOME is not set");
     says(
@@ -1467,6 +1470,10 @@ fn tlc_installs_from_its_source_and_a_missing_home_curl_source_or_java_is_a_faul
         "1.7.4 from file://",
     );
     says(fault(Some(&home), &home.join("none"), &pinned), ": curl: ");
+    says(
+        fault_from(Some(&home), &home.join("none"), None),
+        "1.7.4 from https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar: curl: ",
+    );
     says(
         fault(Some(&home), &bin, &home.join("none.jar")),
         ": curl exit status",
