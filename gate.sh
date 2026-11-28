@@ -7,6 +7,9 @@ cargo fmt --all --check
 cargo clippy --all-targets --quiet -- -D warnings
 # The tests, measured against .slimfit/baseline.json (in place of cargo test).
 slimfit check
+# Each stand-in answers every case of its contract (truefit.toml), by the truefit built here.
+cargo build --quiet
+./target/debug/truefit contract
 # The documents, each in its home and budget, against .docfit/baseline.json.
 docfit check
 # The release script, as far as it goes without publishing.
