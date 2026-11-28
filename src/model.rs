@@ -202,7 +202,7 @@ fn tlc() -> Result<(PathBuf, bool), Vec<Value>> {
     })?;
     let dir = home.join(".local/share/truefit/tlc").join(TLC_VERSION);
     let jar = dir.join("tla2tools.jar");
-    if sha256(&jar).as_deref() == Some(TLC_SHA256) {
+    if host::sha256(&jar).as_deref() == Some(TLC_SHA256) {
         return Ok((jar, false));
     }
     let from = std::env::var("TRUEFIT_TLC_FROM").unwrap_or_else(|_| {
@@ -222,7 +222,7 @@ fn tlc() -> Result<(PathBuf, bool), Vec<Value>> {
         .arg(&from)
         .status()
         .map_err(|e| cannot(format!("curl: {e}")))?;
-    let sum = sha256(&part);
+    let sum = host::sha256(&part);
     if !got.success() || sum.as_deref() != Some(TLC_SHA256) {
         let _ = std::fs::remove_file(&part);
         return Err(cannot(match sum {
@@ -232,16 +232,6 @@ fn tlc() -> Result<(PathBuf, bool), Vec<Value>> {
     }
     std::fs::rename(&part, &jar).map_err(|e| cannot(e.to_string()))?;
     Ok((jar, true))
-}
-
-pub fn sha256(path: &Path) -> Option<String> {
-    Some(digest(&std::fs::read(path).ok()?))
-}
-
-fn digest(bytes: &[u8]) -> String {
-    use sha2::Digest;
-    let digest = sha2::Sha256::digest(bytes);
-    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// What one TLC run printed, what that says, whether it completed without
@@ -532,7 +522,7 @@ fn inputs(root: &Path, m: &Model) -> String {
         all.extend(f.as_bytes());
         all.extend(std::fs::read(root.join(&f)).unwrap_or_default());
     }
-    digest(&all)
+    host::digest(&all)
 }
 
 /// Why model `model`'s record does not back promise `promise`, or None: its

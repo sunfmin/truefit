@@ -416,7 +416,7 @@ pub fn without_faults(
     s: &Standin,
     program: &str,
 ) -> Option<(&'static str, Option<String>)> {
-    let sha = find(root, program).and_then(|p| crate::model::sha256(&p));
+    let sha = find(root, program).and_then(|p| crate::host::sha256(&p));
     let kept = s.no_faults.as_ref();
     if !s.faults.is_empty() || kept.is_some_and(|k| Some(&k.sha256) == sha.as_ref()) {
         return None;
