@@ -17,18 +17,69 @@ fn answer(command: &mut Command) -> (Option<i32>, Value) {
     (out.status.code(), json)
 }
 
-/// JIT flags for the JVM of each TLC run in a test (JAVA_TOOL_OPTIONS): C1
-/// only, as TLC's answers do not depend on the JIT tier and a sample's run is
-/// over before C2's compiles pay off (half the CPU of each TLC run here).
-const C1_ONLY: &str = "-XX:TieredStopAtLevel=1";
+/// Flags for the JVM of each TLC run in a test (JAVA_TOOL_OPTIONS), which
+/// change its cost and never its answers. C1 only: a sample's run is over
+/// before C2's compiles pay off (half the CPU of each TLC run here). And
+/// TLC's classes from a CDS archive of the pinned jar, made once for each
+/// `java` and shared by every test process (each test is one), rather than
+/// loaded and verified anew by each run (a fifth of the CPU of each `truefit
+/// model` here); without the jar or the archive, C1 only.
+fn tlc_jvm() -> &'static str {
+    static FLAGS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    FLAGS.get_or_init(|| {
+        let c1 = "-XX:TieredStopAtLevel=1";
+        let jar = PathBuf::from(std::env::var("HOME").unwrap())
+            .join(".local/share/truefit/tlc/1.7.4/tla2tools.jar");
+        // Its name is the `java` and jar it is for: another's it cannot map.
+        let Ok(version) = Command::new("java").arg("-version").output() else {
+            return c1.to_string();
+        };
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&(&version.stderr, &jar), &mut h);
+        let id = std::hash::Hasher::finish(&h);
+        let archive = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("tlc-{id:x}.jsa"));
+        let flags = format!("{c1} -XX:SharedArchiveFile={}", archive.display());
+        if archive.is_file() {
+            return flags;
+        }
+        let dir = model_sample("cds", &[]);
+        // Installs the pinned TLC if it is not yet, and runs none.
+        truefit_in(&dir, &["model", "--trace", "none.jsonl"]);
+        // Written aside, then renamed: a process reading it sees all or none.
+        let part = archive.with_extension(format!("{}.part", std::process::id()));
+        let _ = std::fs::create_dir_all(env!("CARGO_TARGET_TMPDIR"));
+        let made = Command::new("java")
+            .arg(c1)
+            .arg(format!("-XX:ArchiveClassesAtExit={}", part.display()))
+            .arg(format!("-Djava.io.tmpdir={}", dir.display()))
+            .arg("-cp")
+            .arg(&jar)
+            .args([
+                "tlc2.TLC",
+                "-workers",
+                "1",
+                "-config",
+                "Queue.cfg",
+                "Queue.tla",
+            ])
+            .current_dir(&dir)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if made && std::fs::rename(&part, &archive).is_ok() {
+            flags
+        } else {
+            c1.to_string()
+        }
+    })
+}
 
-/// `truefit_in`, with each TLC run's JVM given `C1_ONLY`.
+/// `truefit_in`, with each TLC run's JVM given `tlc_jvm()`.
 fn truefit_c1_in(dir: &Path, args: &[&str]) -> (Option<i32>, Value) {
     answer(
         Command::new(env!("CARGO_BIN_EXE_truefit"))
             .args(args)
             .current_dir(dir)
-            .env("JAVA_TOOL_OPTIONS", C1_ONLY),
+            .env("JAVA_TOOL_OPTIONS", tlc_jvm()),
     )
 }
 
@@ -1022,7 +1073,7 @@ fn model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_
                 .current_dir(&dir)
                 .env(
                     "JAVA_TOOL_OPTIONS",
-                    format!("{C1_ONLY} -Djava.io.tmpdir={}", shared.display()),
+                    format!("{} -Djava.io.tmpdir={}", tlc_jvm(), shared.display()),
                 )
                 .stdout(std::process::Stdio::piped())
                 .spawn()

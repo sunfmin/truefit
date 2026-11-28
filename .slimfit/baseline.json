@@ -65,6 +65,15 @@
       "reason": "Its assertions (globbed standins incl. a missing dir, differing-case counted then cleared with its .differ.json removed, a 30-day-old pass still fresh, empty tasks, the 'in no git repo' note, next 'nothing', null task) are not in the wrapper test, which checks wrapper/run-word attribution. Folding the fresh date and globs into it changes what it checks.",
       "suite": "rust",
       "test": "truefit::cli::next_gives_nothing_once_every_tie_is_fresh"
+    },
+    {
+      "hash": "bc02ab285561d95f",
+      "kind": "slow-test",
+      "reason": "its time is 16 real TLC runs (JVMs): two truefit model runs at once against the real TLC temp-dir race (truefit#15), then a real counterexample and a real parse failure; each already C1-only and loading TLC's classes from a shared CDS archive (6.10s -> 5.47s, truefit#60)",
+      "seconds": 5.473000000000001,
+      "suite": "rust",
+      "suite_seconds": 23.106,
+      "test": "truefit::cli::model_checks_the_sample_with_the_pinned_tlc_two_at_once_each_in_its_own_temp_dir_and_names_a_broken_property"
     }
   ],
   "kept_files": [
