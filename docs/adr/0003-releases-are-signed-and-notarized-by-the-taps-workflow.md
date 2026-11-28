@@ -1,10 +1,10 @@
 # 3. Releases are signed and notarized by the tap's workflow
 
-Status: accepted, 2026-11-22 (truefit#16, after slimfit#100).
+Status: accepted, 2026-11-22, after slimfit ADR 0013 (below).
 
 ## Context
 
-Until truefit#16 a cut (`packaging/release.sh cut`) built on the cutting host,
+Until this decision a cut (`packaging/release.sh cut`) built on the cutting host,
 for aarch64 only, and published from there: the archive to the tap's release,
 the formula (with `depends_on arch: :arm64`) to the tap. The binary was only ad
 hoc signed: Intel Macs could not run it, and Gatekeeper rejected a copy
